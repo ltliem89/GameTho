@@ -10,6 +10,15 @@ export interface Position {
   y: number;
 }
 
+export interface BunnyUpgrades {
+  level: number; // 1 to 5
+  speedLevel: number; // +move speed
+  magnetLevel: number; // magnet pull radius
+  shieldLevel: number; // hazard immunity / resistance
+  superHopLevel: number; // jump height and flight duration
+  harvestLuckLevel: number; // bonus carrot multiplier / double drops
+}
+
 export interface BunnyEntity {
   x: number;
   y: number;
@@ -29,6 +38,8 @@ export interface BunnyEntity {
   cloversFound: number;
   berriesPicked: number;
   hurtTimer: number; // for flashing red when touching hazardous plants
+  shieldTimer: number; // golden shield active timer
+  auraPhase: number;
 }
 
 export interface CollectibleItem {
@@ -37,7 +48,9 @@ export interface CollectibleItem {
   x: number;
   y: number;
   collected: boolean;
-  respawnTimer?: number;
+  respawnTimer?: number; // countdown until regrowth (0 = regrown)
+  maxRespawnTimer?: number;
+  regrowProgress?: number; // 0 to 1 for visual sprout scaling
   bobPhase: number;
 }
 
@@ -65,6 +78,9 @@ export interface ForestDecor {
     | 'tree_blossom'
     | 'tree_apple'
     | 'tree_golden'
+    | 'tree_willow'
+    | 'tree_birch'
+    | 'tree_maple'
     | 'bush'
     | 'mushroom_red'
     | 'mushroom_glow'
@@ -92,7 +108,18 @@ export interface ForestDecor {
 
 export interface ForestAnimal {
   id: string;
-  type: 'bird' | 'squirrel' | 'hedgehog' | 'duck' | 'deer' | 'frog';
+  type:
+    | 'bird'
+    | 'squirrel'
+    | 'hedgehog'
+    | 'duck'
+    | 'deer'
+    | 'frog'
+    | 'fox'
+    | 'owl'
+    | 'panda'
+    | 'turtle'
+    | 'fairy_butterfly';
   name: string;
   nameVi: string;
   x: number;
@@ -120,7 +147,7 @@ export interface Particle {
   alpha: number;
   life: number;
   maxLife: number;
-  type: 'dust' | 'leaf' | 'sparkle' | 'rain' | 'splash' | 'heart' | 'firefly' | 'ripple' | 'petal' | 'smoke' | 'skull';
+  type: 'dust' | 'leaf' | 'sparkle' | 'rain' | 'splash' | 'heart' | 'firefly' | 'ripple' | 'petal' | 'smoke' | 'skull' | 'magnet_spark';
 }
 
 export interface FloatingText {
@@ -160,19 +187,50 @@ export interface Quest {
   targetId?: string;
 }
 
+export interface InteractivePlant {
+  id: string;
+  nameVi: string;
+  x: number;
+  y: number;
+  state: 'withered' | 'watered' | 'bloomed';
+  waterProgress: number; // 0 to 100
+  bloomTimer: number;
+  bloomType: 'rainbow_lotus' | 'sun_sunflower' | 'crystal_orchid';
+  hintVi: string;
+}
+
+export interface Achievement {
+  id: string;
+  titleVi: string;
+  descVi: string;
+  icon: string;
+  unlocked: boolean;
+  unlockedAt?: string;
+  category: 'explore' | 'collect' | 'nature' | 'social';
+  rewardCarrots: number;
+  rewardXp: number;
+}
+
 export interface DiscoveryStats {
   score: number;
   carrots: number;
   berries: number;
   clovers: number;
   goldenCarrots: number;
+  apples: number;
+  witheredPlantsRevived: number;
+  xp: number;
+  playerLevel: number;
   animalsTalked: string[];
   burrowsFound: number;
   areasVisited: string[];
+  bridgesCrossed: string[]; // ids of 3 bridges crossed
   stepsCount: number;
   hazardsAvoidedOrHit: number;
   questsCompletedCount: number;
   unlockedSkins: BunnySkin[];
   unlockedAccessories: BunnyAccessory[];
+  upgrades: BunnyUpgrades;
+  achievements: Achievement[];
 }
 

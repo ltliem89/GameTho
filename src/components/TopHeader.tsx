@@ -1,6 +1,6 @@
 import React from 'react';
 import { DiscoveryStats, WeatherType } from '../types';
-import { Volume2, VolumeX, Music, Music2, Sparkles, Map, HelpCircle, Sun, Sunset, Moon, CloudRain, Zap } from 'lucide-react';
+import { Volume2, VolumeX, Music, Music2, Sparkles, Map, HelpCircle, Sun, Sunset, Moon, CloudRain, Zap, Award, ArrowUpCircle } from 'lucide-react';
 import { sounds } from '../utils/audio';
 
 interface TopHeaderProps {
@@ -16,6 +16,10 @@ interface TopHeaderProps {
   onToggleSpeed: () => void;
   onOpenWardrobe: () => void;
   onOpenMap: () => void;
+  onOpenQuests: () => void;
+  onOpenUpgrades: () => void;
+  onOpenAchievements: () => void;
+  readyQuestsCount: number;
   onOpenHelp: () => void;
 }
 
@@ -32,49 +36,149 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
   onToggleSpeed,
   onOpenWardrobe,
   onOpenMap,
+  onOpenQuests,
+  onOpenUpgrades,
+  onOpenAchievements,
+  readyQuestsCount,
   onOpenHelp,
 }) => {
+  const currentLevel = stats.playerLevel || 1;
+  const currentXp = stats.xp || 0;
+  const xpInCurrentLevel = currentXp % 100;
+  const xpPercent = Math.min(100, Math.round(xpInCurrentLevel));
+
   return (
-    <header id="top-game-header" className="fixed top-3 inset-x-3 sm:inset-x-6 z-35 pointer-events-none flex flex-col gap-2.5">
+    <header id="top-game-header" className="fixed top-3 inset-x-3 sm:inset-x-6 z-35 pointer-events-none flex flex-col gap-2">
       {/* Top Bar Row */}
-      <div className="flex items-center justify-between gap-2">
-        {/* Left: Location Zone Badge & Collectible Counters */}
+      <div className="flex items-center justify-between gap-2 flex-wrap">
+        {/* Left: Level Bar, Zone & Collectible Counters */}
         <div className="pointer-events-auto flex items-center flex-wrap gap-2">
+          {/* Bunny Level & XP Bar */}
+          <div
+            id="bunny-level-xp-card"
+            className="flex items-center gap-2 px-3 py-1.5 rounded-2xl bg-slate-900/90 backdrop-blur-md border border-amber-400/40 shadow-[0_4px_16px_rgba(245,158,11,0.25)] text-xs font-black text-white cursor-pointer hover:border-amber-300 transition-all active:scale-95"
+            onClick={onOpenUpgrades}
+            title="Nhấn để xem bảng Nâng Cấp & Cấp Độ"
+          >
+            <div className="flex items-center gap-1 text-amber-300">
+              <span className="text-sm">🐰</span>
+              <span>CẤP {currentLevel}</span>
+            </div>
+            <div className="w-16 sm:w-20 h-2.5 bg-slate-800 rounded-full overflow-hidden p-0.5 border border-slate-700">
+              <div
+                className="h-full bg-gradient-to-r from-amber-500 to-yellow-300 rounded-full transition-all duration-300 shadow-sm"
+                style={{ width: `${xpPercent}%` }}
+              />
+            </div>
+            <span className="text-[10px] text-amber-400 font-bold">{xpInCurrentLevel}/100 XP</span>
+          </div>
+
           {/* Current Forest Zone Pill */}
           <div
             id="zone-indicator-badge"
-            className="flex items-center gap-2 px-3.5 py-1.5 rounded-2xl bg-slate-900/85 backdrop-blur-md border border-emerald-400/40 shadow-[0_4px_16px_rgba(16,185,129,0.25)] text-xs font-black text-white cursor-pointer hover:bg-slate-900 hover:border-emerald-300 transition-all active:scale-95"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-2xl bg-slate-900/85 backdrop-blur-md border border-emerald-400/40 shadow-md text-xs font-black text-white cursor-pointer hover:bg-slate-900 hover:border-emerald-300 transition-all active:scale-95"
             onClick={onOpenMap}
             title="Nhấn để xem bản đồ"
           >
-            <span className="relative flex h-2.5 w-2.5">
+            <span className="relative flex h-2 w-2">
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
             </span>
-            <span className="text-emerald-300 font-extrabold tracking-wide">{currentZone}</span>
+            <span className="text-emerald-300 font-bold">{currentZone}</span>
           </div>
 
           {/* Stats Badges */}
           <div className="flex items-center gap-2 bg-slate-900/85 backdrop-blur-md border border-white/20 px-3 py-1.5 rounded-2xl shadow-xl text-xs font-black">
-            <span className="flex items-center gap-1.5 text-amber-400 font-extrabold" title="Cà rốt đã ăn">
-              <span className="text-base">🥕</span>
+            <span className="flex items-center gap-1 text-amber-400 font-extrabold" title="Cà rốt đã ăn">
+              <span className="text-sm">🥕</span>
               <span className="bg-amber-500/20 px-1.5 py-0.5 rounded-lg border border-amber-400/30 text-amber-300">{stats.carrots}</span>
             </span>
             <span className="text-white/20 font-light">|</span>
-            <span className="flex items-center gap-1.5 text-pink-400 font-extrabold" title="Dâu rừng">
-              <span className="text-base">🫐</span>
+            <span className="flex items-center gap-1 text-pink-400 font-extrabold" title="Dâu rừng">
+              <span className="text-sm">🫐</span>
               <span className="bg-pink-500/20 px-1.5 py-0.5 rounded-lg border border-pink-400/30 text-pink-300">{stats.berries}</span>
             </span>
             <span className="text-white/20 font-light">|</span>
-            <span className="flex items-center gap-1.5 text-emerald-400 font-extrabold" title="Cỏ 4 lá may mắn">
-              <span className="text-base">🍀</span>
+            <span className="flex items-center gap-1 text-emerald-400 font-extrabold" title="Cỏ 4 lá may mắn">
+              <span className="text-sm">🍀</span>
               <span className="bg-emerald-500/20 px-1.5 py-0.5 rounded-lg border border-emerald-400/30 text-emerald-300">{stats.clovers}</span>
             </span>
+            {(stats.apples || 0) > 0 && (
+              <>
+                <span className="text-white/20 font-light">|</span>
+                <span className="flex items-center gap-1 text-red-400 font-extrabold" title="Táo ngọt đã hái">
+                  <span className="text-sm">🍎</span>
+                  <span className="bg-red-500/20 px-1.5 py-0.5 rounded-lg border border-red-400/30 text-red-300">{stats.apples}</span>
+                </span>
+              </>
+            )}
+            {stats.goldenCarrots > 0 && (
+              <>
+                <span className="text-white/20 font-light">|</span>
+                <span className="flex items-center gap-1 text-yellow-300 font-black animate-pulse" title="Cà rốt Hoàng Kim">
+                  <span className="text-sm">✨</span>
+                  <span className="bg-yellow-500/20 px-1.5 py-0.5 rounded-lg border border-yellow-400/40 text-yellow-200">
+                    {stats.goldenCarrots}
+                  </span>
+                </span>
+              </>
+            )}
           </div>
         </div>
 
         {/* Right: Quick Action Controls */}
-        <div className="pointer-events-auto flex items-center gap-2">
+        <div className="pointer-events-auto flex items-center gap-1.5 sm:gap-2">
+          {/* Achievements Button */}
+          <button
+            id="btn-open-achievements-header"
+            onClick={() => {
+              sounds.playChirp();
+              onOpenAchievements();
+            }}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-2xl bg-gradient-to-r from-amber-600 via-amber-500 to-yellow-500 text-amber-950 font-black text-xs shadow-md active:scale-95 transition-all border border-amber-300/40 hover:from-amber-500 hover:to-yellow-400"
+            title="Xem bảng thành tích"
+          >
+            <span className="text-sm">🏆</span>
+            <span className="hidden sm:inline">Thành Tích</span>
+          </button>
+          {/* Bunny Upgrades Button */}
+          <button
+            id="btn-open-upgrades-header"
+            onClick={() => {
+              sounds.playChime();
+              onOpenUpgrades();
+            }}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-2xl bg-gradient-to-r from-amber-500 via-yellow-400 to-amber-500 text-amber-950 font-black text-xs shadow-[0_4px_16px_rgba(245,158,11,0.4)] active:scale-95 transition-all border border-amber-100 hover:from-amber-400 hover:to-yellow-300"
+            title="Nâng cấp kỹ năng Thỏ con"
+          >
+            <ArrowUpCircle className="w-4 h-4 text-amber-950 animate-bounce" />
+            <span>Nâng Cấp</span>
+            <span className="bg-amber-950/20 px-1.5 py-0.5 rounded-md text-[10px] font-black">
+              Lv.{currentLevel}
+            </span>
+          </button>
+
+          {/* Quests Button with active notification badge */}
+          <button
+            id="btn-open-quests-header"
+            onClick={() => {
+              sounds.playChime();
+              onOpenQuests();
+            }}
+            className={`relative flex items-center gap-1.5 px-3 py-1.5 rounded-2xl font-black text-xs shadow-xl active:scale-95 transition-all border ${
+              readyQuestsCount > 0
+                ? 'bg-gradient-to-r from-purple-500 via-pink-500 to-rose-500 text-white border-pink-200 shadow-[0_0_20px_rgba(236,72,153,0.6)] animate-pulse'
+                : 'bg-slate-900/85 backdrop-blur-md border-purple-400/40 text-purple-300 hover:bg-slate-900 hover:border-purple-300'
+            }`}
+            title="Xem danh sách nhiệm vụ"
+          >
+            <Award className={`w-4 h-4 ${readyQuestsCount > 0 ? 'animate-spin' : ''}`} />
+            <span className="hidden sm:inline">Nhiệm Vụ</span>
+            {readyQuestsCount > 0 && (
+              <span className="w-2.5 h-2.5 rounded-full bg-red-500 border border-white animate-ping absolute -top-1 -right-1" />
+            )}
+          </button>
+
           {/* Weather / Time Selector */}
           <div className="flex items-center bg-slate-900/85 backdrop-blur-md border border-white/20 p-1 rounded-2xl shadow-xl">
             <button

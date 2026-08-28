@@ -1,6 +1,29 @@
-import React, { useEffect, useRef, useState, useCallback } from 'react';
-import { BunnyAccessory, BunnyEntity, BunnySkin, CollectibleItem, DiscoveryStats, Footstep, ForestAnimal, ForestDecor, Particle, WeatherType } from '../types';
-import { FOREST_ZONES, generateInitialWorld, WORLD_HEIGHT, WORLD_WIDTH } from '../utils/forestWorld';
+import React, { useEffect, useRef, useCallback } from 'react';
+import {
+  BunnyAccessory,
+  BunnyEntity,
+  BunnySkin,
+  CollectibleItem,
+  DiscoveryStats,
+  Footstep,
+  ForestAnimal,
+  ForestDecor,
+  Particle,
+  WeatherType,
+  BunnyUpgrades,
+} from '../types';
+import {
+  FOREST_BIOMES,
+  generateInitialWorld,
+  checkBunnyCollision,
+  getRiverCenterX,
+  RIVER_HALF_WIDTH,
+  BRIDGES,
+  isPointInRiver,
+  isPointOnBridge,
+  WORLD_HEIGHT,
+  WORLD_WIDTH,
+} from '../utils/forestWorld';
 import { sounds } from '../utils/audio';
 
 interface GameCanvasProps {
@@ -8,7 +31,8 @@ interface GameCanvasProps {
   bunnySkin: BunnySkin;
   bunnyAccessory: BunnyAccessory;
   speedMultiplier: number;
-  onStatsUpdate: (stats: DiscoveryStats) => void;
+  upgrades?: BunnyUpgrades;
+  onStatsUpdate: (updater: (prev: DiscoveryStats) => DiscoveryStats) => void;
   onZoneChange: (zoneNameVi: string) => void;
   onAnimalInteract: (animal: ForestAnimal) => void;
   joystickVector: { x: number; y: number } | null;
@@ -16,11 +40,21 @@ interface GameCanvasProps {
   jumpSignal: number;
 }
 
+const DEFAULT_UPGRADES: BunnyUpgrades = {
+  level: 1,
+  speedLevel: 0,
+  magnetLevel: 0,
+  shieldLevel: 0,
+  superHopLevel: 0,
+  harvestLuckLevel: 0,
+};
+
 export const GameCanvas: React.FC<GameCanvasProps> = ({
   weather,
   bunnySkin,
   bunnyAccessory,
   speedMultiplier,
+  upgrades = DEFAULT_UPGRADES,
   onStatsUpdate,
   onZoneChange,
   onAnimalInteract,
@@ -59,19 +93,10 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
   const butterFliesRef = useRef<Array<{ x: number; y: number; vx: number; vy: number; color: string; phase: number }>>([]);
   const firefliesRef = useRef<Array<{ x: number; y: number; vx: number; vy: number; glow: number }>>([]);
 
-  const statsRef = useRef<DiscoveryStats>({
-    carrots: 0,
-    berries: 0,
-    clovers: 0,
-    animalsTalked: [],
-    burrowsFound: 0,
-    areasVisited: ['Thảm Cỏ Nhà Thỏ'],
-    stepsCount: 0,
-  });
-
   const currentZoneRef = useRef<string>('Thảm Cỏ Nhà Thỏ');
   const animationFrameId = useRef<number>(0);
   const prevJumpSignal = useRef<number>(jumpSignal);
+  const hazardCooldownRef = useRef<number>(0);
 
   // Sync Skin & Accessory to ref
   useEffect(() => {
@@ -79,19 +104,12 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
     bunnyRef.current.accessory = bunnyAccessory;
   }, [bunnySkin, bunnyAccessory]);
 
-  // Handle jump signal from external UI button
-  useEffect(() => {
-    if (jumpSignal !== prevJumpSignal.current) {
-      prevJumpSignal.current = jumpSignal;
-      doJump();
-    }
-  }, [jumpSignal]);
-
+  // Jump action
   const doJump = useCallback(() => {
     const bunny = bunnyRef.current;
     if (!bunny.isJumping) {
       bunny.isJumping = true;
-      bunny.jumpHeight = 1;
+      bunny.jumpHeight = 0.01;
       sounds.playHop();
 
       // Create hop dust particles
@@ -112,7 +130,15 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
     }
   }, []);
 
-  // Initialize World
+  // Handle jump signal from external UI button
+  useEffect(() => {
+    if (jumpSignal !== prevJumpSignal.current) {
+      prevJumpSignal.current = jumpSignal;
+      doJump();
+    }
+  }, [jumpSignal, doJump]);
+
+  // Initialize World Once
   useEffect(() => {
     const initial = generateInitialWorld();
     decorsRef.current = initial.decors;
@@ -121,13 +147,13 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
 
     // Butterflies
     const bFlies = [];
-    for (let i = 0; i < 18; i++) {
+    for (let i = 0; i < 28; i++) {
       bFlies.push({
-        x: 300 + Math.random() * 1000,
-        y: 1200 + Math.random() * 900,
+        x: 300 + Math.random() * (WORLD_WIDTH - 600),
+        y: 300 + Math.random() * (WORLD_HEIGHT - 600),
         vx: (Math.random() - 0.5) * 1.2,
         vy: (Math.random() - 0.5) * 1.2,
-        color: ['#f472b6', '#fbbf24', '#a78bfa', '#60a5fa', '#f87171'][Math.floor(Math.random() * 5)],
+        color: ['#f472b6', '#fbbf24', '#a78bfa', '#60a5fa', '#f87171', '#34d399'][Math.floor(Math.random() * 6)],
         phase: Math.random() * Math.PI * 2,
       });
     }
@@ -135,7 +161,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
 
     // Fireflies
     const fFlies = [];
-    for (let i = 0; i < 35; i++) {
+    for (let i = 0; i < 45; i++) {
       fFlies.push({
         x: Math.random() * WORLD_WIDTH,
         y: Math.random() * WORLD_HEIGHT,
@@ -150,7 +176,6 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
   // Keyboard Event Listeners
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Prevent scrolling when playing with arrow keys / space
       if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', ' ', 'w', 'a', 's', 'd', 'W', 'A', 'S', 'D'].includes(e.key)) {
         e.preventDefault();
       }
@@ -162,8 +187,6 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
       if (e.key === ' ' || e.code === 'Space') {
         doJump();
       }
-
-      // Clear click target if keyboard used
       clickTarget.current = null;
     };
 
@@ -184,119 +207,125 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
     };
   }, [doJump]);
 
-  // Handle Canvas Click to Walk / Tap to Move
+  // Canvas Click/Touch to navigate
   const handleCanvasClick = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const rect = canvas.getBoundingClientRect();
 
+    const rect = canvas.getBoundingClientRect();
     let clientX = 0;
     let clientY = 0;
-    if ('touches' in e) {
-      if (e.touches.length > 0) {
-        clientX = e.touches[0].clientX;
-        clientY = e.touches[0].clientY;
-      } else {
-        return;
-      }
-    } else {
+
+    if ('touches' in e && e.touches.length > 0) {
+      clientX = e.touches[0].clientX;
+      clientY = e.touches[0].clientY;
+    } else if ('clientX' in e) {
       clientX = e.clientX;
       clientY = e.clientY;
     }
 
-    const mouseCanvasX = (clientX - rect.left) * (canvas.width / rect.width);
-    const mouseCanvasY = (clientY - rect.top) * (canvas.height / rect.height);
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
 
-    const bunny = bunnyRef.current;
-    const cameraX = Math.max(0, Math.min(WORLD_WIDTH - canvas.width, bunny.x - canvas.width / 2));
-    const cameraY = Math.max(0, Math.min(WORLD_HEIGHT - canvas.height, bunny.y - canvas.height / 2));
+    const clickScreenX = (clientX - rect.left) * scaleX;
+    const clickScreenY = (clientY - rect.top) * scaleY;
 
-    const worldTargetX = mouseCanvasX + cameraX;
-    const worldTargetY = mouseCanvasY + cameraY;
+    // Convert Screen to World Coords
+    const cameraX = Math.max(0, Math.min(WORLD_WIDTH - canvas.width, bunnyRef.current.x - canvas.width / 2));
+    const cameraY = Math.max(0, Math.min(WORLD_HEIGHT - canvas.height, bunnyRef.current.y - canvas.height / 2));
 
-    // Check if clicked near an animal to interact directly
-    for (const animal of animalsRef.current) {
-      const dist = Math.hypot(animal.x - worldTargetX, animal.y - worldTargetY);
-      if (dist < 60) {
-        triggerAnimalDialogue(animal);
-        return;
-      }
-    }
+    const worldTargetX = clickScreenX + cameraX;
+    const worldTargetY = clickScreenY + cameraY;
 
     clickTarget.current = {
-      x: Math.max(80, Math.min(WORLD_WIDTH - 80, worldTargetX)),
-      y: Math.max(80, Math.min(WORLD_HEIGHT - 80, worldTargetY)),
+      x: worldTargetX,
+      y: worldTargetY,
       active: true,
       timer: 0,
     };
-  };
 
-  const triggerAnimalDialogue = (animal: ForestAnimal) => {
     sounds.playChirp();
-    const dialogues = animal.dialogueVi;
-    const nextText = dialogues[Math.floor(Math.random() * dialogues.length)];
-    animal.currentDialogue = nextText;
-    animal.dialogueTimer = 180; // 3 seconds at 60fps
-    animal.state = 'happy';
-
-    if (!statsRef.current.animalsTalked.includes(animal.id)) {
-      statsRef.current.animalsTalked.push(animal.id);
-      onStatsUpdate({ ...statsRef.current });
-      sounds.playChime();
-    }
-    onAnimalInteract(animal);
   };
 
-  // Main Game Loop
+  // Trigger Animal Dialogue
+  const triggerAnimalDialogue = (animal: ForestAnimal) => {
+    animal.dialogueTimer = 180;
+    const dialogues = animal.dialogueVi || [];
+    if (dialogues.length > 0) {
+      const randomIdx = Math.floor(Math.random() * dialogues.length);
+      animal.currentDialogue = dialogues[randomIdx];
+    }
+    sounds.playAnimalSound(animal.type);
+    onAnimalInteract(animal);
+
+    onStatsUpdate((prev) => {
+      if (!prev.animalsTalked.includes(animal.id)) {
+        return {
+          ...prev,
+          animalsTalked: [...prev.animalsTalked, animal.id],
+        };
+      }
+      return prev;
+    });
+  };
+
+  // Main Game Animation Loop
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    let lastTime = performance.now();
+    // Responsive Canvas Resizing
+    const handleResize = () => {
+      if (!canvas) return;
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+    };
+    handleResize();
+    window.addEventListener('resize', handleResize);
+
     let stepTimer = 0;
     let rainSpawnTimer = 0;
 
     const gameLoop = (currentTime: number) => {
-      const dt = Math.min((currentTime - lastTime) / 1000, 0.1);
-      lastTime = currentTime;
-
-      // 1. Handle Resize dynamically
-      if (canvas.width !== window.innerWidth || canvas.height !== window.innerHeight) {
-        canvas.width = window.innerWidth;
-        canvas.height = window.innerHeight;
-      }
+      if (!canvas || !ctx) return;
 
       const bunny = bunnyRef.current;
-      const baseSpeed = bunny.speed * speedMultiplier;
+
+      // 1. Calculate Upgraded Speed
+      const speedBonus = 1 + (upgrades.speedLevel * 0.15);
+      const superHopBonus = 1 + (upgrades.superHopLevel * 0.25);
+      const baseSpeed = bunny.speed * speedMultiplier * speedBonus;
+
       let moveX = 0;
       let moveY = 0;
 
-      // Input from Keyboard
-      if (keysPressed.current['w'] || keysPressed.current['arrowup']) moveY -= 1;
-      if (keysPressed.current['s'] || keysPressed.current['arrowdown']) moveY += 1;
-      if (keysPressed.current['a'] || keysPressed.current['arrowleft']) moveX -= 1;
-      if (keysPressed.current['d'] || keysPressed.current['arrowright']) moveX += 1;
-
-      // Input from Touch Joystick
-      if (joystickVector && (joystickVector.x !== 0 || joystickVector.y !== 0)) {
-        moveX = joystickVector.x;
-        moveY = joystickVector.y;
-        clickTarget.current = null;
+      // Joystick Vector Input
+      if (joystickVector && (Math.abs(joystickVector.x) > 0.05 || Math.abs(joystickVector.y) > 0.05)) {
+        moveX = joystickVector.x * baseSpeed;
+        moveY = joystickVector.y * baseSpeed;
+      }
+      // Keyboard Controls
+      else {
+        const k = keysPressed.current;
+        if (k['arrowleft'] || k['a']) moveX -= baseSpeed;
+        if (k['arrowright'] || k['d']) moveX += baseSpeed;
+        if (k['arrowup'] || k['w']) moveY -= baseSpeed;
+        if (k['arrowdown'] || k['s']) moveY += baseSpeed;
       }
 
-      // Input from Click-to-move
+      // Click-to-Move Target
       if (clickTarget.current && clickTarget.current.active) {
         const dx = clickTarget.current.x - bunny.x;
         const dy = clickTarget.current.y - bunny.y;
         const dist = Math.hypot(dx, dy);
 
-        if (dist < 10) {
-          clickTarget.current.active = false;
+        if (dist > 8) {
+          moveX = (dx / dist) * baseSpeed;
+          moveY = (dy / dist) * baseSpeed;
         } else {
-          moveX = dx / dist;
-          moveY = dy / dist;
+          clickTarget.current.active = false;
         }
       }
 
@@ -312,15 +341,17 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
         if (moveX > 0.1) bunny.facing = 'right';
 
         // Hop animation phase
-        bunny.hopPhase += 0.22;
+        bunny.hopPhase += 0.24 * speedBonus;
         stepTimer++;
-        if (stepTimer > 16) {
+        if (stepTimer > 15) {
           stepTimer = 0;
           sounds.playHop();
-          statsRef.current.stepsCount++;
-          onStatsUpdate({ ...statsRef.current });
+          onStatsUpdate((prev) => ({
+            ...prev,
+            stepsCount: prev.stepsCount + 1,
+          }));
 
-          // Leave a subtle footstep
+          // Footstep marker
           footstepsRef.current.push({
             x: bunny.x,
             y: bunny.y + 10,
@@ -328,7 +359,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
             facing: bunny.facing,
           });
 
-          // Small dust puff
+          // Dust puff
           particlesRef.current.push({
             x: bunny.x,
             y: bunny.y + 12,
@@ -349,7 +380,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
 
       // Jump Physics
       if (bunny.isJumping) {
-        bunny.jumpHeight += 0.12;
+        bunny.jumpHeight += 0.12 * superHopBonus;
         if (bunny.jumpHeight >= Math.PI) {
           bunny.isJumping = false;
           bunny.jumpHeight = 0;
@@ -371,16 +402,55 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
         }
       }
 
-      // Move bunny with soft boundaries
-      const nextX = bunny.x + moveX;
-      const nextY = bunny.y + moveY;
+      // Move bunny with COLLISION DETECTION against:
+      // 1. River water (cannot cross except over bridge)
+      // 2. Fences (cannot pass solid fences, only gates/openings)
+      // 3. Tree trunks, dense hedge bushes & rocks
+      const targetNextX = bunny.x + moveX;
+      const targetNextY = bunny.y + moveY;
 
-      // World Boundary Constraints
-      bunny.x = Math.max(60, Math.min(WORLD_WIDTH - 60, nextX));
-      bunny.y = Math.max(60, Math.min(WORLD_HEIGHT - 60, nextY));
+      if (moveX !== 0) {
+        const colX = checkBunnyCollision(targetNextX, bunny.y, decorsRef.current, bunny.isJumping);
+        if (!colX.blocked) {
+          bunny.x = Math.max(60, Math.min(WORLD_WIDTH - 60, targetNextX));
+        } else if (colX.hitObstacleName?.includes('suối') && Math.random() < 0.15) {
+          particlesRef.current.push({
+            x: targetNextX,
+            y: bunny.y,
+            vx: (Math.random() - 0.5) * 2,
+            vy: -Math.random() * 2 - 1,
+            size: 3,
+            color: '#38bdf8',
+            alpha: 0.8,
+            life: 0,
+            maxLife: 18,
+            type: 'ripple',
+          });
+        }
+      }
 
-      // Zone Checking
-      for (const zone of FOREST_ZONES) {
+      if (moveY !== 0) {
+        const colY = checkBunnyCollision(bunny.x, targetNextY, decorsRef.current, bunny.isJumping);
+        if (!colY.blocked) {
+          bunny.y = Math.max(60, Math.min(WORLD_HEIGHT - 60, targetNextY));
+        } else if (colY.hitObstacleName?.includes('suối') && Math.random() < 0.15) {
+          particlesRef.current.push({
+            x: bunny.x,
+            y: targetNextY,
+            vx: (Math.random() - 0.5) * 2,
+            vy: -Math.random() * 2 - 1,
+            size: 3,
+            color: '#38bdf8',
+            alpha: 0.8,
+            life: 0,
+            maxLife: 18,
+            type: 'ripple',
+          });
+        }
+      }
+
+      // Biome Zone Detection
+      for (const zone of FOREST_BIOMES) {
         if (
           bunny.x >= zone.bounds.minX &&
           bunny.x <= zone.bounds.maxX &&
@@ -390,50 +460,105 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
           if (currentZoneRef.current !== zone.nameVi) {
             currentZoneRef.current = zone.nameVi;
             onZoneChange(zone.nameVi);
-            if (!statsRef.current.areasVisited.includes(zone.nameVi)) {
-              statsRef.current.areasVisited.push(zone.nameVi);
-              sounds.playChime();
-              onStatsUpdate({ ...statsRef.current });
-            }
+            sounds.playChime();
+            onStatsUpdate((prev) => {
+              if (!prev.areasVisited.includes(zone.nameVi)) {
+                return {
+                  ...prev,
+                  areasVisited: [...prev.areasVisited, zone.nameVi],
+                };
+              }
+              return prev;
+            });
           }
           break;
         }
       }
 
-      // Burrow / Hole Teleport Interaction (Fast-Travel)
+      // Fast-Travel Burrow Interactions
       for (const decor of decorsRef.current) {
         if (decor.type === 'burrow') {
           const dist = Math.hypot(decor.x - bunny.x, decor.y - bunny.y);
-          if (dist < 32) {
-            // Check if we are jumping into it
-            if (bunny.isJumping) {
-              sounds.playBurrowPop();
-              statsRef.current.burrowsFound++;
-              onStatsUpdate({ ...statsRef.current });
+          if (dist < 34 && bunny.isJumping) {
+            sounds.playBurrowPop();
+            onStatsUpdate((prev) => ({
+              ...prev,
+              burrowsFound: prev.burrowsFound + 1,
+            }));
 
-              // Burrow particles
-              for (let i = 0; i < 15; i++) {
-                particlesRef.current.push({
-                  x: decor.x,
-                  y: decor.y,
-                  vx: (Math.random() - 0.5) * 3,
-                  vy: (Math.random() - 0.5) * 3,
-                  size: 4,
-                  color: '#fbbf24',
-                  alpha: 0.9,
-                  life: 0,
-                  maxLife: 30,
-                  type: 'sparkle',
-                });
-              }
+            // Burrow sparkle particles
+            for (let i = 0; i < 16; i++) {
+              particlesRef.current.push({
+                x: decor.x,
+                y: decor.y,
+                vx: (Math.random() - 0.5) * 4,
+                vy: (Math.random() - 0.5) * 4,
+                size: 4,
+                color: '#fbbf24',
+                alpha: 0.9,
+                life: 0,
+                maxLife: 30,
+                type: 'sparkle',
+              });
+            }
 
-              // Teleport to the opposite burrow
-              if (decor.id === 'bunny_home_burrow') {
-                bunny.x = 2650;
-                bunny.y = 1950;
+            // Teleport to opposite burrow
+            if (decor.id === 'bunny_home_burrow') {
+              bunny.x = 2650;
+              bunny.y = 1950;
+            } else {
+              bunny.x = 450;
+              bunny.y = 450;
+            }
+            break;
+          }
+        }
+      }
+
+      // Hazard Bush & Toxic Mushroom Interactions with Shield logic
+      if (hazardCooldownRef.current > 0) {
+        hazardCooldownRef.current--;
+      } else {
+        for (const decor of decorsRef.current) {
+          if (decor.isHazard) {
+            const dist = Math.hypot(decor.x - bunny.x, decor.y - bunny.y);
+            if (dist < 32) {
+              hazardCooldownRef.current = 60; // 1s cooldown
+
+              if (upgrades.shieldLevel >= 2) {
+                // Shield absorbs completely with sparkling barrier!
+                sounds.playChime();
+                for (let p = 0; p < 10; p++) {
+                  particlesRef.current.push({
+                    x: bunny.x,
+                    y: bunny.y,
+                    vx: (Math.random() - 0.5) * 3,
+                    vy: (Math.random() - 0.5) * 3,
+                    size: 3.5,
+                    color: '#34d399',
+                    alpha: 1,
+                    life: 0,
+                    maxLife: 20,
+                    type: 'sparkle',
+                  });
+                }
               } else {
-                bunny.x = 450;
-                bunny.y = 450;
+                // Take minor prickly penalty
+                sounds.playHazardPrick();
+                for (let p = 0; p < 8; p++) {
+                  particlesRef.current.push({
+                    x: bunny.x,
+                    y: bunny.y,
+                    vx: (Math.random() - 0.5) * 2.5,
+                    vy: -Math.random() * 2,
+                    size: 3,
+                    color: '#ef4444',
+                    alpha: 0.9,
+                    life: 0,
+                    maxLife: 20,
+                    type: 'dust',
+                  });
+                }
               }
               break;
             }
@@ -441,59 +566,132 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
         }
       }
 
-      // Check Collectibles
+      // Magnet Pull Radius for Carrots & Berries
+      const magnetRadius = upgrades.magnetLevel > 0 ? 80 + upgrades.magnetLevel * 45 : 0;
+
+      // Update Collectibles & Respawning Regrowth Loop
       for (const item of collectiblesRef.current) {
-        if (!item.collected) {
-          item.bobPhase += 0.05;
-          const dist = Math.hypot(item.x - bunny.x, item.y - bunny.y);
-          if (dist < 35) {
-            item.collected = true;
-            if (item.type === 'carrot' || item.type === 'golden_carrot') {
-              sounds.playMunch();
-              bunny.carrotsEaten += item.type === 'golden_carrot' ? 5 : 1;
-              statsRef.current.carrots += item.type === 'golden_carrot' ? 5 : 1;
-            } else if (item.type === 'berry') {
-              sounds.playMunch();
-              bunny.berriesPicked += 1;
-              statsRef.current.berries += 1;
-            } else if (item.type === 'clover') {
-              sounds.playChime();
-              bunny.cloversFound += 1;
-              statsRef.current.clovers += 1;
+        // Respawn Logic: If eaten, count down timer and regrow slowly
+        if (item.collected) {
+          if (item.respawnTimer !== undefined && item.respawnTimer > 0) {
+            // Harvest luck reduces respawn timer faster
+            const respawnSpeed = 1 + (upgrades.harvestLuckLevel * 0.3);
+            item.respawnTimer -= respawnSpeed;
+            if (item.maxRespawnTimer) {
+              item.regrowProgress = 1 - (item.respawnTimer / item.maxRespawnTimer);
             }
-
-            onStatsUpdate({ ...statsRef.current });
-
-            // Spawn floating hearts / sparkles
-            for (let p = 0; p < 8; p++) {
-              particlesRef.current.push({
-                x: item.x,
-                y: item.y,
-                vx: (Math.random() - 0.5) * 2,
-                vy: -Math.random() * 2 - 1,
-                size: Math.random() * 3 + 2,
-                color: item.type === 'golden_carrot' ? '#f59e0b' : item.type === 'clover' ? '#22c55e' : item.type === 'berry' ? '#ec4899' : '#f97316',
-                alpha: 1,
-                life: 0,
-                maxLife: 25,
-                type: item.type === 'golden_carrot' ? 'sparkle' : 'heart',
-              });
+            if (item.respawnTimer <= 0) {
+              item.collected = false;
+              item.regrowProgress = 1;
+              // Little sprout pop effect
+              for (let p = 0; p < 6; p++) {
+                particlesRef.current.push({
+                  x: item.x,
+                  y: item.y,
+                  vx: (Math.random() - 0.5) * 1.5,
+                  vy: -Math.random() * 1.5,
+                  size: 2.5,
+                  color: '#4ade80',
+                  alpha: 0.8,
+                  life: 0,
+                  maxLife: 20,
+                  type: 'sparkle',
+                });
+              }
             }
+          }
+          continue;
+        }
+
+        item.bobPhase += 0.05;
+
+        // Magnet attraction
+        const dist = Math.hypot(item.x - bunny.x, item.y - bunny.y);
+        if (magnetRadius > 0 && dist < magnetRadius && dist > 20) {
+          const pullSpeed = 2.8 + upgrades.magnetLevel * 0.8;
+          item.x += ((bunny.x - item.x) / dist) * pullSpeed;
+          item.y += ((bunny.y - item.y) / dist) * pullSpeed;
+        }
+
+        // Collection Contact Check
+        if (dist < 36) {
+          item.collected = true;
+          // Set respawn timer: 15-25 seconds
+          item.maxRespawnTimer = 900 + Math.random() * 600;
+          item.respawnTimer = item.maxRespawnTimer;
+          item.regrowProgress = 0;
+
+          const luckMultiplier = Math.random() < (upgrades.harvestLuckLevel * 0.2) ? 2 : 1;
+
+          if (item.type === 'carrot') {
+            sounds.playMunch();
+            const gain = 1 * luckMultiplier;
+            bunny.carrotsEaten += gain;
+            onStatsUpdate((prev) => ({
+              ...prev,
+              carrots: prev.carrots + gain,
+            }));
+          } else if (item.type === 'golden_carrot') {
+            sounds.playChime();
+            const gain = 5 * luckMultiplier;
+            bunny.carrotsEaten += gain;
+            onStatsUpdate((prev) => ({
+              ...prev,
+              carrots: prev.carrots + gain,
+              goldenCarrots: prev.goldenCarrots + 1,
+            }));
+          } else if (item.type === 'berry') {
+            sounds.playMunch();
+            const gain = 1 * luckMultiplier;
+            bunny.berriesPicked += gain;
+            onStatsUpdate((prev) => ({
+              ...prev,
+              berries: prev.berries + gain,
+            }));
+          } else if (item.type === 'clover') {
+            sounds.playChime();
+            bunny.cloversFound += 1;
+            onStatsUpdate((prev) => ({
+              ...prev,
+              clovers: prev.clovers + 1,
+            }));
+          }
+
+          // Spawn floating hearts or golden sparkles
+          for (let p = 0; p < 8; p++) {
+            particlesRef.current.push({
+              x: item.x,
+              y: item.y,
+              vx: (Math.random() - 0.5) * 2,
+              vy: -Math.random() * 2 - 1,
+              size: Math.random() * 3 + 2,
+              color:
+                item.type === 'golden_carrot'
+                  ? '#f59e0b'
+                  : item.type === 'clover'
+                  ? '#22c55e'
+                  : item.type === 'berry'
+                  ? '#ec4899'
+                  : '#f97316',
+              alpha: 1,
+              life: 0,
+              maxLife: 25,
+              type: item.type === 'golden_carrot' ? 'sparkle' : 'heart',
+            });
           }
         }
       }
 
-      // Update Animals & Proximity interactions
+      // Animals AI & Interaction Proximity
       for (const animal of animalsRef.current) {
         if (animal.dialogueTimer > 0) {
           animal.dialogueTimer--;
         }
 
-        // Random subtle movements
         animal.stateTimer++;
         if (animal.stateTimer > 120 + Math.random() * 120) {
           animal.stateTimer = 0;
-          animal.state = Math.random() < 0.3 ? 'walking' : 'idle';
+          animal.state = Math.random() < 0.35 ? 'walking' : 'idle';
           if (animal.state === 'walking') {
             animal.facing = Math.random() < 0.5 ? 'left' : 'right';
           }
@@ -502,29 +700,27 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
         if (animal.state === 'walking') {
           const moveDir = animal.facing === 'left' ? -0.4 : 0.4;
           animal.x += moveDir;
-          // Keep near initial territory
-          if (Math.abs(animal.x - animal.initialX) > 60) {
+          if (Math.abs(animal.x - animal.initialX) > 65) {
             animal.facing = animal.x > animal.initialX ? 'left' : 'right';
           }
         }
 
-        // Auto show dialogue bubble when bunny is very close
         const distToBunny = Math.hypot(animal.x - bunny.x, animal.y - bunny.y);
         if (distToBunny < 55 && animal.dialogueTimer <= 0) {
           triggerAnimalDialogue(animal);
         }
       }
 
-      // Update Weather Particles (Rain / Fireflies / Leaves)
+      // Weather Particles (Rain / Fireflies)
       if (weather === 'rainy') {
         rainSpawnTimer++;
         if (rainSpawnTimer % 2 === 0) {
-          const cameraX = Math.max(0, Math.min(WORLD_WIDTH - canvas.width, bunny.x - canvas.width / 2));
-          const cameraY = Math.max(0, Math.min(WORLD_HEIGHT - canvas.height, bunny.y - canvas.height / 2));
+          const camX = Math.max(0, Math.min(WORLD_WIDTH - canvas.width, bunny.x - canvas.width / 2));
+          const camY = Math.max(0, Math.min(WORLD_HEIGHT - canvas.height, bunny.y - canvas.height / 2));
           for (let r = 0; r < 5; r++) {
             particlesRef.current.push({
-              x: cameraX + Math.random() * canvas.width,
-              y: cameraY - 10,
+              x: camX + Math.random() * canvas.width,
+              y: camY - 10,
               vx: -1.5,
               vy: 9 + Math.random() * 4,
               size: 1.5,
@@ -547,7 +743,6 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
         p.alpha = 1 - p.life / p.maxLife;
 
         if (p.type === 'rain' && p.life >= p.maxLife) {
-          // Splash ripple
           particlesRef.current.push({
             x: p.x,
             y: p.y,
@@ -595,52 +790,52 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
       }
 
       // --- RENDERING PASS ---
-      // Camera positioning centered on Bunny with boundary clamping
       const cameraX = Math.max(0, Math.min(WORLD_WIDTH - canvas.width, bunny.x - canvas.width / 2));
       const cameraY = Math.max(0, Math.min(WORLD_HEIGHT - canvas.height, bunny.y - canvas.height / 2));
 
       ctx.save();
       ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-      // Translate Canvas Viewport
       ctx.translate(-cameraX, -cameraY);
 
-      // 1. Draw Forest Base Grass & Biome Transitions
+      // 1. Forest Ground & Paths
       drawForestBackground(ctx, weather);
 
-      // 2. Draw Footsteps
+      // 2. River Stream (Animated with ripples)
+      drawRiverStream(ctx, currentTime, weather);
+
+      // 3. Wooden Bridges
+      drawBridges(ctx);
+
+      // 4. Footsteps
       drawFootsteps(ctx);
 
-      // 3. Draw Water Ponds / River & Bridges
-      drawWaterwaysAndBridges(ctx, weather);
-
-      // 4. Draw Click/Tap Navigation Marker if active
+      // 5. Navigation Target Marker
       if (clickTarget.current && clickTarget.current.active) {
         drawClickTargetMarker(ctx, clickTarget.current.x, clickTarget.current.y, currentTime);
       }
 
-      // 5. Draw Collectibles
+      // 6. Collectibles (Carrots, berries, clovers, regrowing sprouts)
       drawCollectibles(ctx);
 
-      // 6. Draw Lower Decor (Flowers, burrows, grass tufts)
+      // 7. Background Decors (Burrows, flowers, ponds)
       drawBackgroundDecors(ctx);
 
-      // 7. Draw Animals
+      // 8. Animals
       drawForestAnimals(ctx);
 
-      // 8. Draw Bunny
-      drawBunny(ctx, bunny);
+      // 9. Bunny (with upgrades aura, halo, and speed lines)
+      drawBunny(ctx, bunny, upgrades, currentTime);
 
-      // 9. Draw Upper Decor (Trees, Bushes, Obstacles) with Y-sorting for depth
+      // 10. Foreground Decors (Trees with realistic foliage, fences, gates, bushes)
       drawForegroundDecors(ctx);
 
-      // 10. Draw Butterflies
+      // 11. Butterflies
       drawButterflies(ctx);
 
-      // 11. Draw Particles (Dust, Sparkles, Splashes)
+      // 12. Particles
       drawParticles(ctx);
 
-      // 12. Weather & Lighting Overlay (Atmosphere, Night darkness, Sunbeams, Lantern glows)
+      // 13. Weather Atmosphere & Lighting
       drawWeatherAndLighting(ctx, canvas.width, canvas.height, cameraX, cameraY, bunny, weather);
 
       ctx.restore();
@@ -651,13 +846,14 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
     animationFrameId.current = requestAnimationFrame(gameLoop);
 
     return () => {
+      window.removeEventListener('resize', handleResize);
       cancelAnimationFrame(animationFrameId.current);
     };
-  }, [weather, speedMultiplier, onStatsUpdate, onZoneChange, onAnimalInteract, joystickVector]);
+  }, [weather, speedMultiplier, upgrades, onStatsUpdate, onZoneChange, onAnimalInteract, joystickVector]);
 
-  // Helper Drawing Functions
+  // --- DRAWING FUNCTIONS ---
+
   const drawForestBackground = (ctx: CanvasRenderingContext2D, currentW: WeatherType) => {
-    // Base lush grass gradient
     let topColor = '#4ade80';
     let bottomColor = '#22c55e';
     if (currentW === 'night') {
@@ -677,34 +873,189 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
     ctx.fillStyle = bgGrad;
     ctx.fillRect(0, 0, WORLD_WIDTH, WORLD_HEIGHT);
 
-    // Dirt Walking Trails between Meadow, Carrot Patch & River
+    // Forest Walking Dirt Trails
     ctx.save();
-    ctx.strokeStyle = currentW === 'night' ? '#443428' : '#d9770633';
-    ctx.lineWidth = 55;
+    ctx.strokeStyle = currentW === 'night' ? '#44342833' : '#d9770633';
+    ctx.lineWidth = 60;
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
 
     ctx.beginPath();
-    // Trail 1: From Burrow to Carrot Farm
     ctx.moveTo(450, 450);
     ctx.bezierCurveTo(800, 500, 1100, 400, 1360, 450);
-    // Trail 2: From Carrot Farm to River Bridge
-    ctx.bezierCurveTo(1800, 520, 2100, 580, 2400, 600);
-    // Trail 3: From River Bridge down to Mystic Grove
-    ctx.bezierCurveTo(2450, 1000, 2300, 1400, 2200, 1800);
-    // Trail 4: Down into Flower Hills
+    ctx.bezierCurveTo(1800, 520, 2000, 600, 2200, 620);
+    ctx.bezierCurveTo(2450, 1000, 2300, 1500, 2200, 1800);
     ctx.bezierCurveTo(1600, 1850, 1000, 1750, 600, 1700);
     ctx.stroke();
     ctx.restore();
 
-    // Soft decorative grass blades
+    // Grass Tuft Accents
     ctx.fillStyle = currentW === 'night' ? '#14532d' : '#86efac44';
-    for (let gx = 100; gx < WORLD_WIDTH; gx += 160) {
-      for (let gy = 100; gy < WORLD_HEIGHT; gy += 160) {
-        ctx.fillRect(gx + (Math.sin(gy) * 20), gy, 4, 10);
-        ctx.fillRect(gx + 6 + (Math.sin(gy) * 20), gy + 2, 4, 8);
+    for (let gx = 120; gx < WORLD_WIDTH; gx += 180) {
+      for (let gy = 120; gy < WORLD_HEIGHT; gy += 180) {
+        ctx.fillRect(gx + Math.sin(gy) * 20, gy, 4, 10);
+        ctx.fillRect(gx + 6 + Math.sin(gy) * 20, gy + 2, 4, 8);
       }
     }
+  };
+
+  // Render the River Stream (realistic sine curve with water foam, riverbanks, and flow currents)
+  const drawRiverStream = (ctx: CanvasRenderingContext2D, time: number, currentW: WeatherType) => {
+    ctx.save();
+    const waterColor = currentW === 'night' ? '#1e3a8a' : '#38bdf8';
+    const deepWaterColor = currentW === 'night' ? '#172554' : '#0284c7';
+
+    // 1. Sandy/Muddy Riverbanks & Stone Borders (Outer boundary)
+    ctx.strokeStyle = currentW === 'night' ? '#3d2616' : '#78350f44';
+    ctx.lineWidth = RIVER_HALF_WIDTH * 2 + 50;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    for (let y = 0; y <= WORLD_HEIGHT; y += 30) {
+      const x = getRiverCenterX(y);
+      if (y === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+
+    // 2. Main Deep River Water Body
+    ctx.strokeStyle = deepWaterColor;
+    ctx.lineWidth = RIVER_HALF_WIDTH * 2;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    for (let y = 0; y <= WORLD_HEIGHT; y += 30) {
+      const x = getRiverCenterX(y);
+      if (y === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+
+    // 3. Inner Flowing Water Center Stream
+    ctx.strokeStyle = waterColor;
+    ctx.lineWidth = RIVER_HALF_WIDTH * 1.35;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    for (let y = 0; y <= WORLD_HEIGHT; y += 30) {
+      const x = getRiverCenterX(y);
+      if (y === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+
+    // 4. Shimmering Surface Wave Currents & Water Ripples
+    ctx.fillStyle = currentW === 'night' ? '#93c5fd33' : '#ffffff88';
+    for (let y = 40; y < WORLD_HEIGHT; y += 95) {
+      const waveOffset = Math.sin(time * 0.003 + y * 0.015) * 28;
+      const x = getRiverCenterX(y) + waveOffset;
+      ctx.beginPath();
+      ctx.ellipse(x - 18, y, 16, 3.5, 0.15, 0, Math.PI * 2);
+      ctx.ellipse(x + 22, y + 18, 12, 3, -0.15, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // 5. Riverbank Stones / Pebbles on West and East banks
+    for (let y = 80; y < WORLD_HEIGHT; y += 160) {
+      const rx = getRiverCenterX(y);
+      // Skip near bridges
+      const nearBridge = BRIDGES.some((b) => Math.abs(y - b.y) < 70);
+      if (nearBridge) continue;
+
+      ctx.fillStyle = currentW === 'night' ? '#475569' : '#94a3b8';
+      ctx.beginPath();
+      ctx.ellipse(rx - RIVER_HALF_WIDTH - 6, y, 7, 5, 0.2, 0, Math.PI * 2);
+      ctx.ellipse(rx + RIVER_HALF_WIDTH + 6, y + 25, 8, 5.5, -0.2, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    ctx.restore();
+  };
+
+  // Render the 3 Wooden Bridges (Top, Middle, Bottom) with railings, posts, lanterns & nameplates
+  const drawBridges = (ctx: CanvasRenderingContext2D) => {
+    ctx.save();
+    for (const decor of decorsRef.current) {
+      if (decor.type === 'bridge') {
+        const bridgeX = decor.x;
+        const bridgeY = decor.y;
+        const halfW = decor.width / 2;
+        const halfH = decor.height / 2;
+
+        // 1. Stone Foundation Anchors on both river banks (West & East)
+        ctx.fillStyle = '#475569';
+        ctx.fillRect(bridgeX - halfW - 8, bridgeY - halfH, 18, decor.height);
+        ctx.fillRect(bridgeX + halfW - 10, bridgeY - halfH, 18, decor.height);
+
+        // 2. Bridge Shadow over water
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.38)';
+        ctx.fillRect(bridgeX - halfW + 6, bridgeY - halfH + 12, decor.width - 12, decor.height);
+
+        // 3. Wooden Support Beams beneath
+        ctx.fillStyle = '#451a03';
+        ctx.fillRect(bridgeX - halfW, bridgeY - halfH + 8, decor.width, 10);
+        ctx.fillRect(bridgeX - halfW, bridgeY + halfH - 18, decor.width, 10);
+
+        // 4. Main Timber Deck Planks
+        ctx.fillStyle = '#92400e';
+        ctx.fillRect(bridgeX - halfW, bridgeY - halfH, decor.width, decor.height);
+
+        // 5. Individual Timber Planks & Gaps
+        ctx.strokeStyle = '#451a03';
+        ctx.lineWidth = 3;
+        for (let bx = bridgeX - halfW; bx <= bridgeX + halfW; bx += 20) {
+          ctx.beginPath();
+          ctx.moveTo(bx, bridgeY - halfH);
+          ctx.lineTo(bx, bridgeY + halfH);
+          ctx.stroke();
+
+          // Brass nail rivets on each plank
+          ctx.fillStyle = '#fbbf24';
+          ctx.beginPath();
+          ctx.arc(bx + 10, bridgeY - halfH + 10, 2, 0, Math.PI * 2);
+          ctx.arc(bx + 10, bridgeY + halfH - 10, 2, 0, Math.PI * 2);
+          ctx.fill();
+        }
+
+        // 6. Bridge Top and Bottom Wooden Guardrails
+        ctx.fillStyle = '#b45309';
+        ctx.fillRect(bridgeX - halfW - 5, bridgeY - halfH - 6, decor.width + 10, 10);
+        ctx.fillRect(bridgeX - halfW - 5, bridgeY + halfH - 4, decor.width + 10, 10);
+
+        ctx.fillStyle = '#78350f';
+        ctx.fillRect(bridgeX - halfW - 5, bridgeY - halfH - 3, decor.width + 10, 3);
+        ctx.fillRect(bridgeX - halfW - 5, bridgeY + halfH + 3, decor.width + 10, 3);
+
+        // 7. Fence Baluster Posts along the railings
+        ctx.fillStyle = '#451a03';
+        for (let bx = bridgeX - halfW; bx <= bridgeX + halfW; bx += 36) {
+          ctx.fillRect(bx - 4, bridgeY - halfH - 12, 8, 14);
+          ctx.fillRect(bx - 4, bridgeY + halfH - 2, 8, 14);
+        }
+
+        // 8. Bridge Nameplate / Badge
+        const bridgeMatch = BRIDGES.find((b) => b.id === decor.id);
+        const bridgeLabel = bridgeMatch?.nameVi || 'Cầu Gỗ Qua Suối';
+
+        ctx.font = 'bold 12px Plus Jakarta Sans, Arial';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+
+        // Wooden signboard background
+        const textWidth = ctx.measureText(`🌉 ${bridgeLabel}`).width;
+        ctx.fillStyle = 'rgba(15, 23, 42, 0.88)';
+        ctx.strokeStyle = '#f59e0b';
+        ctx.lineWidth = 1.5;
+
+        const badgeX = bridgeX;
+        const badgeY = bridgeY - halfH - 24;
+        ctx.beginPath();
+        ctx.roundRect(badgeX - textWidth / 2 - 10, badgeY - 10, textWidth + 20, 20, 8);
+        ctx.fill();
+        ctx.stroke();
+
+        ctx.fillStyle = '#fef08a';
+        ctx.fillText(`🌉 ${bridgeLabel}`, badgeX, badgeY);
+      }
+    }
+    ctx.restore();
   };
 
   const drawFootsteps = (ctx: CanvasRenderingContext2D) => {
@@ -719,53 +1070,6 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
     ctx.restore();
   };
 
-  const drawWaterwaysAndBridges = (ctx: CanvasRenderingContext2D, currentW: WeatherType) => {
-    ctx.save();
-    for (const decor of decorsRef.current) {
-      if (decor.type === 'water_pond') {
-        const waterGrad = ctx.createRadialGradient(decor.x, decor.y, 10, decor.x, decor.y, decor.width / 2);
-        if (currentW === 'night') {
-          waterGrad.addColorStop(0, '#1e3a8a');
-          waterGrad.addColorStop(1, '#172554');
-        } else {
-          waterGrad.addColorStop(0, '#7dd3fc');
-          waterGrad.addColorStop(1, '#0284c7');
-        }
-        ctx.fillStyle = waterGrad;
-        ctx.beginPath();
-        ctx.ellipse(decor.x, decor.y, decor.width / 2, decor.height / 2, 0, 0, Math.PI * 2);
-        ctx.fill();
-
-        // Water sparkles / ripples
-        ctx.fillStyle = '#ffffff66';
-        ctx.beginPath();
-        ctx.arc(decor.x - 20, decor.y - 10, 4, 0, Math.PI * 2);
-        ctx.arc(decor.x + 25, decor.y + 15, 3, 0, Math.PI * 2);
-        ctx.fill();
-      } else if (decor.type === 'bridge') {
-        // Wooden planks across river
-        ctx.fillStyle = '#78350f';
-        ctx.fillRect(decor.x - decor.width / 2, decor.y - decor.height / 2, decor.width, decor.height);
-
-        // Plank lines
-        ctx.strokeStyle = '#451a03';
-        ctx.lineWidth = 3;
-        for (let bx = decor.x - decor.width / 2; bx <= decor.x + decor.width / 2; bx += 18) {
-          ctx.beginPath();
-          ctx.moveTo(bx, decor.y - decor.height / 2);
-          ctx.lineTo(bx, decor.y + decor.height / 2);
-          ctx.stroke();
-        }
-
-        // Bridge Side Rails
-        ctx.fillStyle = '#92400e';
-        ctx.fillRect(decor.x - decor.width / 2, decor.y - decor.height / 2 - 4, decor.width, 6);
-        ctx.fillRect(decor.x - decor.width / 2, decor.y + decor.height / 2 - 2, decor.width, 6);
-      }
-    }
-    ctx.restore();
-  };
-
   const drawClickTargetMarker = (ctx: CanvasRenderingContext2D, x: number, y: number, time: number) => {
     ctx.save();
     const pulse = (Math.sin(time * 0.008) + 1) / 2;
@@ -775,7 +1079,6 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
     ctx.arc(x, y, 16 + pulse * 6, 0, Math.PI * 2);
     ctx.stroke();
 
-    // Cute Flower Marker
     ctx.fillStyle = '#fb7185';
     for (let i = 0; i < 5; i++) {
       const angle = (i * Math.PI * 2) / 5;
@@ -792,10 +1095,29 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
     ctx.restore();
   };
 
+  // Draw Collectibles with Respawning Sprout Animation
   const drawCollectibles = (ctx: CanvasRenderingContext2D) => {
     ctx.save();
     for (const item of collectiblesRef.current) {
-      if (item.collected) continue;
+      // Regrowth state (sprout popping from ground)
+      if (item.collected) {
+        if (item.regrowProgress && item.regrowProgress > 0.1) {
+          const sproutScale = item.regrowProgress;
+          ctx.fillStyle = '#86efac';
+          ctx.beginPath();
+          ctx.ellipse(item.x, item.y + 8, 6 * sproutScale, 2 * sproutScale, 0, 0, Math.PI * 2);
+          ctx.fill();
+
+          // Little green shoot
+          ctx.fillStyle = '#22c55e';
+          ctx.beginPath();
+          ctx.ellipse(item.x - 3 * sproutScale, item.y - 2 * sproutScale, 2 * sproutScale, 5 * sproutScale, -0.4, 0, Math.PI * 2);
+          ctx.ellipse(item.x + 3 * sproutScale, item.y - 2 * sproutScale, 2 * sproutScale, 5 * sproutScale, 0.4, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        continue;
+      }
+
       const floatY = item.y + Math.sin(item.bobPhase) * 4;
 
       if (item.type === 'carrot' || item.type === 'golden_carrot') {
@@ -813,7 +1135,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
         ctx.ellipse(item.x + 3, floatY - 14, 4, 9, 0.3, 0, Math.PI * 2);
         ctx.fill();
 
-        // Carrot Cone Body
+        // Carrot Body
         ctx.fillStyle = isGold ? '#f59e0b' : '#f97316';
         ctx.beginPath();
         ctx.moveTo(item.x - 7, floatY - 8);
@@ -833,14 +1155,12 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
         ctx.stroke();
 
         if (isGold) {
-          // Golden sparkle
           ctx.fillStyle = '#ffffff';
           ctx.beginPath();
           ctx.arc(item.x - 2, floatY - 6, 2, 0, Math.PI * 2);
           ctx.fill();
         }
       } else if (item.type === 'berry') {
-        // Red juicy berry bunch
         ctx.fillStyle = 'rgba(0,0,0,0.12)';
         ctx.beginPath();
         ctx.ellipse(item.x, item.y + 8, 8, 3, 0, 0, Math.PI * 2);
@@ -858,7 +1178,6 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
         ctx.arc(item.x, floatY - 7, 3, 0, Math.PI * 2);
         ctx.fill();
       } else if (item.type === 'clover') {
-        // Lucky 4-leaf clover
         ctx.fillStyle = '#15803d';
         for (let l = 0; l < 4; l++) {
           const angle = (l * Math.PI) / 2;
@@ -881,7 +1200,6 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
     ctx.save();
     for (const decor of decorsRef.current) {
       if (decor.type === 'burrow') {
-        // Bunny underground burrow entrance
         ctx.fillStyle = '#3f220f';
         ctx.beginPath();
         ctx.ellipse(decor.x, decor.y, decor.width / 2, decor.height / 2, 0, 0, Math.PI * 2);
@@ -891,15 +1209,13 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
         ctx.lineWidth = 6;
         ctx.stroke();
 
-        // Wooden sign / Welcome arch
         ctx.fillStyle = '#b45309';
-        ctx.fillRect(decor.x - 28, decor.y - 45, 56, 18);
+        ctx.fillRect(decor.x - 30, decor.y - 45, 60, 18);
         ctx.fillStyle = '#fef3c7';
         ctx.font = 'bold 11px Quicksand, sans-serif';
         ctx.textAlign = 'center';
         ctx.fillText(decor.id === 'bunny_home_burrow' ? '🏡 TỔ THỎ' : '✨ HANG BÍ MẬT', decor.x, decor.y - 32);
       } else if (decor.type === 'flower_cluster') {
-        // Cute wildflower patch
         const flowerColors = ['#f43f5e', '#ec4899', '#a855f7', '#fbbf24', '#38bdf8'];
         for (let f = 0; f < 5; f++) {
           const fx = decor.x + (f % 3) * 12 - 12;
@@ -919,10 +1235,10 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
     ctx.restore();
   };
 
+  // Draw Rich Animals (Squirrel, Duck, Hedgehog, Deer, Frog, Fox, Owl, Panda, Turtle, Fairy Butterfly)
   const drawForestAnimals = (ctx: CanvasRenderingContext2D) => {
     ctx.save();
     for (const animal of animalsRef.current) {
-      // Ground shadow
       ctx.fillStyle = 'rgba(0,0,0,0.2)';
       ctx.beginPath();
       ctx.ellipse(animal.x, animal.y + 12, 14, 6, 0, 0, Math.PI * 2);
@@ -935,61 +1251,48 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
       }
 
       if (animal.type === 'squirrel') {
-        // Cute Bushy Squirrel
         ctx.fillStyle = '#b45309';
-        // Tail
         ctx.beginPath();
         ctx.arc(-14, -10, 12, 0, Math.PI * 2);
         ctx.fill();
-        // Body
         ctx.beginPath();
         ctx.ellipse(0, 0, 10, 13, 0.2, 0, Math.PI * 2);
         ctx.fill();
-        // Head
         ctx.beginPath();
         ctx.arc(8, -12, 8, 0, Math.PI * 2);
         ctx.fill();
-        // Ear
         ctx.beginPath();
         ctx.arc(10, -19, 3, 0, Math.PI * 2);
         ctx.fill();
-        // Eye & Acorn
         ctx.fillStyle = '#1e293b';
         ctx.beginPath();
         ctx.arc(11, -13, 1.8, 0, Math.PI * 2);
         ctx.fill();
-        // Acorn in paws
         ctx.fillStyle = '#78350f';
         ctx.beginPath();
         ctx.arc(6, -2, 4, 0, Math.PI * 2);
         ctx.fill();
       } else if (animal.type === 'duck') {
-        // Yellow duckling
         ctx.fillStyle = '#facc15';
         ctx.beginPath();
         ctx.ellipse(0, 0, 12, 10, 0, 0, Math.PI * 2);
         ctx.fill();
-        // Head
         ctx.beginPath();
         ctx.arc(8, -8, 7, 0, Math.PI * 2);
         ctx.fill();
-        // Orange Bill
         ctx.fillStyle = '#f97316';
         ctx.beginPath();
         ctx.ellipse(14, -7, 5, 2.5, 0, 0, Math.PI * 2);
         ctx.fill();
-        // Eye
         ctx.fillStyle = '#0f172a';
         ctx.beginPath();
         ctx.arc(10, -9, 1.5, 0, Math.PI * 2);
         ctx.fill();
       } else if (animal.type === 'hedgehog') {
-        // Spiky round hedgehog
         ctx.fillStyle = '#713f12';
         ctx.beginPath();
         ctx.arc(-2, -4, 12, 0, Math.PI * 2);
         ctx.fill();
-        // Spikes
         ctx.strokeStyle = '#451a03';
         ctx.lineWidth = 2;
         for (let s = 0; s < 7; s++) {
@@ -999,29 +1302,24 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
           ctx.lineTo(-2 + Math.cos(sa) * 16, -4 + Math.sin(sa) * 16);
           ctx.stroke();
         }
-        // Face
         ctx.fillStyle = '#fed7aa';
         ctx.beginPath();
         ctx.arc(9, -2, 7, 0, Math.PI * 2);
         ctx.fill();
         ctx.fillStyle = '#18181b';
         ctx.beginPath();
-        ctx.arc(14, -2, 2, 0, Math.PI * 2); // Black nose
-        ctx.arc(11, -5, 1.5, 0, Math.PI * 2); // Eye
+        ctx.arc(14, -2, 2, 0, Math.PI * 2);
+        ctx.arc(11, -5, 1.5, 0, Math.PI * 2);
         ctx.fill();
       } else if (animal.type === 'deer') {
-        // Gentle Deer
         ctx.fillStyle = '#c2410c';
-        // Body
         ctx.beginPath();
         ctx.ellipse(0, 0, 18, 14, 0, 0, Math.PI * 2);
         ctx.fill();
-        // Neck & Head
         ctx.beginPath();
         ctx.ellipse(14, -14, 6, 12, 0.4, 0, Math.PI * 2);
         ctx.arc(18, -22, 7, 0, Math.PI * 2);
         ctx.fill();
-        // Antlers
         ctx.strokeStyle = '#78350f';
         ctx.lineWidth = 2;
         ctx.beginPath();
@@ -1030,15 +1328,133 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
         ctx.moveTo(20, -32);
         ctx.lineTo(24, -34);
         ctx.stroke();
-        // White spots
         ctx.fillStyle = '#ffffff';
         ctx.beginPath();
         ctx.arc(-4, -2, 2, 0, Math.PI * 2);
         ctx.arc(3, -4, 2, 0, Math.PI * 2);
         ctx.arc(-1, 3, 2, 0, Math.PI * 2);
         ctx.fill();
-      } else if (animal.type === 'frog') {
-        // Green frog
+      } else if (animal.type === 'fox') {
+        // Fluffy Orange Fox
+        ctx.fillStyle = '#ea580c';
+        // Tail
+        ctx.beginPath();
+        ctx.ellipse(-16, -6, 14, 7, -0.3, 0, Math.PI * 2);
+        ctx.fill();
+        // White tail tip
+        ctx.fillStyle = '#ffffff';
+        ctx.beginPath();
+        ctx.arc(-26, -9, 5, 0, Math.PI * 2);
+        ctx.fill();
+        // Body
+        ctx.fillStyle = '#ea580c';
+        ctx.beginPath();
+        ctx.ellipse(0, 0, 13, 11, 0, 0, Math.PI * 2);
+        ctx.fill();
+        // Head & snout
+        ctx.beginPath();
+        ctx.arc(10, -10, 8, 0, Math.PI * 2);
+        ctx.fill();
+        // Snout
+        ctx.fillStyle = '#ffffff';
+        ctx.beginPath();
+        ctx.moveTo(10, -8);
+        ctx.lineTo(18, -8);
+        ctx.lineTo(12, -4);
+        ctx.closePath();
+        ctx.fill();
+        // Nose & eye
+        ctx.fillStyle = '#0f172a';
+        ctx.beginPath();
+        ctx.arc(18, -8, 1.8, 0, Math.PI * 2);
+        ctx.arc(12, -12, 1.5, 0, Math.PI * 2);
+        ctx.fill();
+        // Ears
+        ctx.fillStyle = '#9a3412';
+        ctx.beginPath();
+        ctx.moveTo(8, -17);
+        ctx.lineTo(12, -25);
+        ctx.lineTo(15, -17);
+        ctx.closePath();
+        ctx.fill();
+      } else if (animal.type === 'owl') {
+        // Wise Owl
+        ctx.fillStyle = '#78350f';
+        ctx.beginPath();
+        ctx.ellipse(0, -6, 12, 16, 0, 0, Math.PI * 2);
+        ctx.fill();
+        // Belly feathers
+        ctx.fillStyle = '#fef3c7';
+        ctx.beginPath();
+        ctx.ellipse(0, -4, 8, 10, 0, 0, Math.PI * 2);
+        ctx.fill();
+        // Big yellow eyes
+        ctx.fillStyle = '#facc15';
+        ctx.beginPath();
+        ctx.arc(-5, -12, 5, 0, Math.PI * 2);
+        ctx.arc(5, -12, 5, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = '#0f172a';
+        ctx.beginPath();
+        ctx.arc(-5, -12, 2.5, 0, Math.PI * 2);
+        ctx.arc(5, -12, 2.5, 0, Math.PI * 2);
+        ctx.fill();
+        // Beak
+        ctx.fillStyle = '#f97316';
+        ctx.beginPath();
+        ctx.moveTo(0, -9);
+        ctx.lineTo(-2.5, -6);
+        ctx.lineTo(2.5, -6);
+        ctx.closePath();
+        ctx.fill();
+      } else if (animal.type === 'panda') {
+        // Cute Mini Panda
+        ctx.fillStyle = '#ffffff';
+        ctx.beginPath();
+        ctx.ellipse(0, 0, 14, 13, 0, 0, Math.PI * 2);
+        ctx.fill();
+        // Black limbs & ears
+        ctx.fillStyle = '#0f172a';
+        ctx.beginPath();
+        ctx.arc(-9, -15, 4, 0, Math.PI * 2);
+        ctx.arc(9, -15, 4, 0, Math.PI * 2);
+        ctx.arc(-7, 7, 5, 0, Math.PI * 2);
+        ctx.arc(7, 7, 5, 0, Math.PI * 2);
+        ctx.fill();
+        // Eye patches
+        ctx.beginPath();
+        ctx.ellipse(-5, -7, 4, 3, -0.2, 0, Math.PI * 2);
+        ctx.ellipse(5, -7, 4, 3, 0.2, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = '#ffffff';
+        ctx.beginPath();
+        ctx.arc(-5, -7, 1.2, 0, Math.PI * 2);
+        ctx.arc(5, -7, 1.2, 0, Math.PI * 2);
+        ctx.fill();
+        // Bamboo stalk in paw
+        ctx.fillStyle = '#22c55e';
+        ctx.fillRect(8, -14, 3, 18);
+      } else if (animal.type === 'turtle') {
+        // Green Turtle
+        ctx.fillStyle = '#15803d';
+        ctx.beginPath();
+        ctx.arc(0, 0, 13, 0, Math.PI * 2);
+        ctx.fill();
+        // Shell ridges
+        ctx.strokeStyle = '#86efac';
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+        // Head
+        ctx.fillStyle = '#22c55e';
+        ctx.beginPath();
+        ctx.arc(14, -2, 5, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = '#022c22';
+        ctx.beginPath();
+        ctx.arc(15, -4, 1.2, 0, Math.PI * 2);
+        ctx.fill();
+      } else {
+        // Frog
         ctx.fillStyle = '#16a34a';
         ctx.beginPath();
         ctx.ellipse(0, 0, 11, 8, 0, 0, Math.PI * 2);
@@ -1069,7 +1485,6 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
         const bubbleX = animal.x - boxW / 2;
         const bubbleY = animal.y - 48;
 
-        // Bubble rounded box
         ctx.fillStyle = '#ffffff';
         ctx.shadowColor = 'rgba(0,0,0,0.2)';
         ctx.shadowBlur = 8;
@@ -1078,7 +1493,6 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
         ctx.fill();
         ctx.shadowBlur = 0;
 
-        // Tail pointer
         ctx.beginPath();
         ctx.moveTo(animal.x - 6, bubbleY + boxH);
         ctx.lineTo(animal.x + 6, bubbleY + boxH);
@@ -1086,7 +1500,6 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
         ctx.closePath();
         ctx.fill();
 
-        // Text
         ctx.fillStyle = '#1e293b';
         ctx.textAlign = 'center';
         ctx.fillText(text, animal.x, bubbleY + 18);
@@ -1096,27 +1509,52 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
     ctx.restore();
   };
 
-  const drawBunny = (ctx: CanvasRenderingContext2D, bunny: BunnyEntity) => {
+  // Draw Bunny with dynamic upgrade auras, shield bubble & accessories
+  const drawBunny = (ctx: CanvasRenderingContext2D, bunny: BunnyEntity, currentUpgrades: BunnyUpgrades | undefined, time: number) => {
     ctx.save();
-    // Vertical hop offset
-    const hopYOffset = Math.abs(Math.sin(bunny.hopPhase)) * 9 + (bunny.isJumping ? Math.sin(bunny.jumpHeight) * 26 : 0);
+    const upg = currentUpgrades || DEFAULT_UPGRADES;
+    const hopYOffset =
+      Math.abs(Math.sin(bunny.hopPhase)) * 9 +
+      (bunny.isJumping ? Math.sin(bunny.jumpHeight) * (26 + (upg.superHopLevel || 0) * 8) : 0);
     const squash = bunny.isMoving ? 1 + Math.sin(bunny.hopPhase * 2) * 0.08 : 1;
 
-    // Soft dynamic shadow
+    // Ground Shadow
     ctx.fillStyle = 'rgba(0, 0, 0, 0.22)';
     ctx.beginPath();
-    const shadowScale = Math.max(0.4, 1 - hopYOffset / 35);
+    const shadowScale = Math.max(0.4, 1 - hopYOffset / 40);
     ctx.ellipse(bunny.x, bunny.y + 12, 13 * shadowScale, 6 * shadowScale, 0, 0, Math.PI * 2);
     ctx.fill();
 
+    // 1. Level Aura Glow (Higher Bunny Level = Glowing Golden/Cyan Rings)
+    if ((upg.level || 1) >= 2) {
+      const auraPulse = (Math.sin(time * 0.006) + 1) / 2;
+      ctx.strokeStyle = (upg.level || 1) >= 5 ? '#f59e0b' : '#38bdf8';
+      ctx.lineWidth = 2.5;
+      ctx.globalAlpha = 0.4 + auraPulse * 0.3;
+      ctx.beginPath();
+      ctx.arc(bunny.x, bunny.y - hopYOffset, 22 + (upg.level || 1) * 2, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
+
+    // 2. Shield Protective Bubble (if upgraded)
+    if ((upg.shieldLevel || 0) >= 1) {
+      const shieldGlow = (Math.sin(time * 0.008) + 1) / 2;
+      ctx.strokeStyle = `rgba(52, 211, 153, ${0.4 + shieldGlow * 0.4})`;
+      ctx.fillStyle = `rgba(52, 211, 153, 0.08)`;
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.arc(bunny.x, bunny.y - hopYOffset - 4, 25, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+    }
+
     ctx.translate(bunny.x, bunny.y - hopYOffset);
 
-    // Flip if facing left
     if (bunny.facing === 'left') {
       ctx.scale(-1, 1);
     }
 
-    // Bunny Colors by Skin
     let bodyColor = '#ffffff';
     let earInnerColor = '#fda4af';
     let cheekColor = '#fecdd3';
@@ -1141,15 +1579,15 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
       eyeColor = '#38bdf8';
     }
 
-    // 1. Fluffy Tail
+    // Fluffy Tail
     ctx.fillStyle = bodyColor;
     ctx.beginPath();
     ctx.arc(-14, 2, 6, 0, Math.PI * 2);
     ctx.fill();
 
-    // 2. Bunny Ears (with floppy bounce animation)
+    // Bunny Ears
     const earBounce = Math.sin(bunny.hopPhase) * 0.25;
-    
+
     // Back Ear
     ctx.save();
     ctx.translate(-2, -14);
@@ -1178,13 +1616,12 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
     ctx.fill();
     ctx.restore();
 
-    // 3. Bunny Main Body (Egg-shaped & fluffy)
+    // Body
     ctx.fillStyle = bodyColor;
     ctx.beginPath();
     ctx.ellipse(0, 0, 13 * squash, 14 / squash, 0.1, 0, Math.PI * 2);
     ctx.fill();
 
-    // Spotted skin patches
     if (bunny.skin === 'spotted') {
       ctx.fillStyle = '#64748b';
       ctx.beginPath();
@@ -1193,33 +1630,31 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
       ctx.fill();
     }
 
-    // 4. Bunny Head
+    // Head
     ctx.fillStyle = bodyColor;
     ctx.beginPath();
     ctx.arc(6, -8, 10.5, 0, Math.PI * 2);
     ctx.fill();
 
-    // 5. Cute Face Features
-    // Pink Cheek Blush
+    // Cheek Blush
     ctx.fillStyle = cheekColor;
     ctx.beginPath();
     ctx.ellipse(8, -4, 3.5, 2, 0, 0, Math.PI * 2);
     ctx.fill();
 
-    // Big Sparkly Eye
+    // Eye
     ctx.fillStyle = eyeColor;
     ctx.beginPath();
     ctx.ellipse(9, -8, 2.8, 3.4, 0, 0, Math.PI * 2);
     ctx.fill();
 
-    // Eye catchlights / sparkles
     ctx.fillStyle = '#ffffff';
     ctx.beginPath();
     ctx.arc(8.2, -9.2, 1.2, 0, Math.PI * 2);
     ctx.arc(10, -7.5, 0.6, 0, Math.PI * 2);
     ctx.fill();
 
-    // Pink Nose
+    // Nose
     ctx.fillStyle = '#f43f5e';
     ctx.beginPath();
     ctx.moveTo(14, -6);
@@ -1238,9 +1673,8 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
     ctx.lineTo(19, -3);
     ctx.stroke();
 
-    // 6. Accessories
+    // Accessories
     if (bunny.accessory === 'flower') {
-      // Cute Daisy behind ear
       ctx.fillStyle = '#ec4899';
       for (let p = 0; p < 5; p++) {
         const pa = (p * Math.PI * 2) / 5;
@@ -1253,7 +1687,6 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
       ctx.arc(1, -16, 2, 0, Math.PI * 2);
       ctx.fill();
     } else if (bunny.accessory === 'straw_hat') {
-      // Explorer Straw Hat
       ctx.fillStyle = '#ca8a04';
       ctx.beginPath();
       ctx.ellipse(3, -17, 13, 3.5, 0.1, 0, Math.PI * 2);
@@ -1265,7 +1698,6 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
       ctx.fillStyle = '#dc2626';
       ctx.fillRect(-2, -18, 10, 2);
     } else if (bunny.accessory === 'red_ribbon') {
-      // Red Bow Tie
       ctx.fillStyle = '#ef4444';
       ctx.beginPath();
       ctx.moveTo(7, 1);
@@ -1284,7 +1716,6 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
       ctx.arc(7, 1, 2, 0, Math.PI * 2);
       ctx.fill();
     } else if (bunny.accessory === 'carrot_pack') {
-      // Cute Little Carrot Backpack
       ctx.fillStyle = '#ea580c';
       ctx.beginPath();
       ctx.ellipse(-8, -1, 5, 8, -0.2, 0, Math.PI * 2);
@@ -1297,7 +1728,6 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
       ctx.lineWidth = 1.5;
       ctx.stroke();
     } else if (bunny.accessory === 'glasses') {
-      // Round gold glasses
       ctx.strokeStyle = '#f59e0b';
       ctx.lineWidth = 1.5;
       ctx.beginPath();
@@ -1312,15 +1742,15 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
     ctx.restore();
   };
 
+  // Draw Foreground Decors (Trees: Oak, Pine, Blossom, Apple, Willow, Birch, Maple, Golden; Fences & Gates; Hazards)
   const drawForegroundDecors = (ctx: CanvasRenderingContext2D) => {
     ctx.save();
     for (const decor of decorsRef.current) {
       if (decor.type === 'wooden_fence') {
-        // Wooden garden fence post
+        // Solid Fence Barricade
         ctx.fillStyle = '#a16207';
         ctx.fillRect(decor.x - decor.width / 2, decor.y - 12, decor.width, 6);
         ctx.fillRect(decor.x - decor.width / 2, decor.y + 4, decor.width, 6);
-        // Vertical picket posts
         ctx.fillStyle = '#ca8a04';
         for (let fx = decor.x - decor.width / 2; fx <= decor.x + decor.width / 2; fx += 18) {
           ctx.beginPath();
@@ -1332,8 +1762,44 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
           ctx.closePath();
           ctx.fill();
         }
+      } else if (decor.type === 'fence_gate') {
+        // Open Gate (Permeable passage)
+        ctx.fillStyle = '#78350f';
+        ctx.fillRect(decor.x - decor.width / 2, decor.y - 24, 12, 40);
+        ctx.fillRect(decor.x + decor.width / 2 - 12, decor.y - 24, 12, 40);
+        // Gate Archway
+        ctx.fillStyle = '#ca8a04';
+        ctx.fillRect(decor.x - decor.width / 2, decor.y - 26, decor.width, 8);
+        ctx.fillStyle = '#fef3c7';
+        ctx.font = 'bold 10px Quicksand, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('🚪 CỔNG', decor.x, decor.y - 14);
+      } else if (decor.type === 'thorn_bush') {
+        // Hazardous Bramble Bush
+        ctx.fillStyle = '#3f1828';
+        ctx.beginPath();
+        ctx.arc(decor.x - 10, decor.y, 16, 0, Math.PI * 2);
+        ctx.arc(decor.x + 10, decor.y, 16, 0, Math.PI * 2);
+        ctx.arc(decor.x, decor.y - 8, 18, 0, Math.PI * 2);
+        ctx.fill();
+        // Sharp Spikes
+        ctx.strokeStyle = '#dc2626';
+        ctx.lineWidth = 2;
+        for (let sp = 0; sp < 6; sp++) {
+          const spa = (sp * Math.PI) / 3;
+          ctx.beginPath();
+          ctx.moveTo(decor.x + Math.cos(spa) * 12, decor.y + Math.sin(spa) * 12);
+          ctx.lineTo(decor.x + Math.cos(spa) * 22, decor.y + Math.sin(spa) * 22);
+          ctx.stroke();
+        }
+      } else if (decor.type === 'bush') {
+        ctx.fillStyle = '#15803d';
+        ctx.beginPath();
+        ctx.arc(decor.x - 12, decor.y, 16, 0, Math.PI * 2);
+        ctx.arc(decor.x + 12, decor.y, 16, 0, Math.PI * 2);
+        ctx.arc(decor.x, decor.y - 8, 18, 0, Math.PI * 2);
+        ctx.fill();
       } else if (decor.type === 'rock') {
-        // Soft mossy rock
         ctx.fillStyle = '#64748b';
         ctx.beginPath();
         ctx.ellipse(decor.x, decor.y, decor.width / 2, decor.height / 2, 0, 0, Math.PI * 2);
@@ -1343,7 +1809,6 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
         ctx.arc(decor.x - 4, decor.y - 4, 6, 0, Math.PI * 2);
         ctx.fill();
       } else if (decor.type === 'stump') {
-        // Wood tree stump with growth rings
         ctx.fillStyle = '#78350f';
         ctx.beginPath();
         ctx.ellipse(decor.x, decor.y + 6, decor.width / 2, decor.height / 2.5, 0, 0, Math.PI * 2);
@@ -1352,45 +1817,16 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
         ctx.beginPath();
         ctx.ellipse(decor.x, decor.y - 2, decor.width / 2.2, decor.height / 3.5, 0, 0, Math.PI * 2);
         ctx.fill();
-      } else if (decor.type === 'mushroom_red' || decor.type === 'mushroom_glow') {
-        const isGlow = decor.type === 'mushroom_glow';
-        // Stem
-        ctx.fillStyle = '#f8fafc';
-        ctx.fillRect(decor.x - 4, decor.y - 6, 8, 14);
-        // Cap
-        ctx.fillStyle = isGlow ? '#a855f7' : '#ef4444';
-        ctx.beginPath();
-        ctx.arc(decor.x, decor.y - 6, 12, Math.PI, 0);
-        ctx.fill();
-        // White or cyan dots
-        ctx.fillStyle = isGlow ? '#67e8f9' : '#ffffff';
-        ctx.beginPath();
-        ctx.arc(decor.x - 5, decor.y - 10, 2, 0, Math.PI * 2);
-        ctx.arc(decor.x + 4, decor.y - 11, 2, 0, Math.PI * 2);
-        ctx.arc(decor.x, decor.y - 14, 2, 0, Math.PI * 2);
-        ctx.fill();
-      } else if (decor.type === 'bush') {
-        // Fluffy green bush
-        ctx.fillStyle = '#15803d';
-        ctx.beginPath();
-        ctx.arc(decor.x - 12, decor.y, 16, 0, Math.PI * 2);
-        ctx.arc(decor.x + 12, decor.y, 16, 0, Math.PI * 2);
-        ctx.arc(decor.x, decor.y - 8, 18, 0, Math.PI * 2);
-        ctx.fill();
       } else if (decor.type === 'tree_oak') {
-        // Lush Oak Tree
-        // Trunk
+        // Oak Tree
         ctx.fillStyle = '#5c2c16';
         ctx.fillRect(decor.x - 12, decor.y - 30, 24, 45);
-
-        // Foliage Crown
         ctx.fillStyle = '#166534';
         ctx.beginPath();
         ctx.arc(decor.x - 24, decor.y - 55, 30, 0, Math.PI * 2);
         ctx.arc(decor.x + 24, decor.y - 55, 30, 0, Math.PI * 2);
         ctx.arc(decor.x, decor.y - 75, 35, 0, Math.PI * 2);
         ctx.fill();
-
         ctx.fillStyle = '#22c55e';
         ctx.beginPath();
         ctx.arc(decor.x - 15, decor.y - 65, 22, 0, Math.PI * 2);
@@ -1398,28 +1834,22 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
         ctx.arc(decor.x, decor.y - 85, 26, 0, Math.PI * 2);
         ctx.fill();
       } else if (decor.type === 'tree_pine') {
-        // Tall Evergreen Pine Tree
+        // Pine Tree
         ctx.fillStyle = '#451a03';
         ctx.fillRect(decor.x - 9, decor.y - 20, 18, 35);
-
         ctx.fillStyle = '#065f46';
-        // Tier 1
         ctx.beginPath();
         ctx.moveTo(decor.x, decor.y - 110);
         ctx.lineTo(decor.x + 35, decor.y - 70);
         ctx.lineTo(decor.x - 35, decor.y - 70);
         ctx.closePath();
         ctx.fill();
-
-        // Tier 2
         ctx.beginPath();
         ctx.moveTo(decor.x, decor.y - 80);
         ctx.lineTo(decor.x + 45, decor.y - 40);
         ctx.lineTo(decor.x - 45, decor.y - 40);
         ctx.closePath();
         ctx.fill();
-
-        // Tier 3
         ctx.beginPath();
         ctx.moveTo(decor.x, decor.y - 50);
         ctx.lineTo(decor.x + 55, decor.y - 10);
@@ -1427,22 +1857,105 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
         ctx.closePath();
         ctx.fill();
       } else if (decor.type === 'tree_blossom') {
-        // Pink Sakura Blossom Tree
+        // Sakura Blossom Tree
         ctx.fillStyle = '#582f1b';
         ctx.fillRect(decor.x - 11, decor.y - 28, 22, 42);
-
         ctx.fillStyle = '#db2777';
         ctx.beginPath();
         ctx.arc(decor.x - 22, decor.y - 50, 28, 0, Math.PI * 2);
         ctx.arc(decor.x + 22, decor.y - 50, 28, 0, Math.PI * 2);
         ctx.arc(decor.x, decor.y - 70, 32, 0, Math.PI * 2);
         ctx.fill();
-
         ctx.fillStyle = '#f472b6';
         ctx.beginPath();
         ctx.arc(decor.x - 12, decor.y - 60, 20, 0, Math.PI * 2);
         ctx.arc(decor.x + 12, decor.y - 60, 20, 0, Math.PI * 2);
         ctx.arc(decor.x, decor.y - 78, 24, 0, Math.PI * 2);
+        ctx.fill();
+      } else if (decor.type === 'tree_apple') {
+        // Apple Tree with red apples
+        ctx.fillStyle = '#5c2c16';
+        ctx.fillRect(decor.x - 12, decor.y - 28, 24, 42);
+        ctx.fillStyle = '#15803d';
+        ctx.beginPath();
+        ctx.arc(decor.x, decor.y - 65, 36, 0, Math.PI * 2);
+        ctx.fill();
+        // Red Apples
+        ctx.fillStyle = '#ef4444';
+        for (let ap = 0; ap < 5; ap++) {
+          const apx = decor.x + Math.sin(ap * 2) * 20;
+          const apy = decor.y - 65 + Math.cos(ap * 2) * 18;
+          ctx.beginPath();
+          ctx.arc(apx, apy, 4.5, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      } else if (decor.type === 'tree_golden') {
+        // Golden Tree with sparkling leaves
+        ctx.fillStyle = '#78350f';
+        ctx.fillRect(decor.x - 12, decor.y - 28, 24, 42);
+        ctx.fillStyle = '#eab308';
+        ctx.beginPath();
+        ctx.arc(decor.x, decor.y - 70, 38, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = '#fef08a';
+        ctx.beginPath();
+        ctx.arc(decor.x - 12, decor.y - 75, 22, 0, Math.PI * 2);
+        ctx.arc(decor.x + 12, decor.y - 75, 22, 0, Math.PI * 2);
+        ctx.fill();
+      } else if (decor.type === 'tree_willow') {
+        // Willow Tree with drooping vines
+        ctx.fillStyle = '#451a03';
+        ctx.fillRect(decor.x - 14, decor.y - 30, 28, 45);
+        ctx.fillStyle = '#15803d';
+        ctx.beginPath();
+        ctx.ellipse(decor.x, decor.y - 70, 42, 30, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = '#4ade80';
+        ctx.lineWidth = 3;
+        for (let v = -30; v <= 30; v += 12) {
+          ctx.beginPath();
+          ctx.moveTo(decor.x + v, decor.y - 65);
+          ctx.quadraticCurveTo(decor.x + v + 8, decor.y - 30, decor.x + v, decor.y - 10);
+          ctx.stroke();
+        }
+      } else if (decor.type === 'tree_birch') {
+        // Birch Tree with white trunk & notches
+        ctx.fillStyle = '#f8fafc';
+        ctx.fillRect(decor.x - 10, decor.y - 35, 20, 50);
+        ctx.fillStyle = '#0f172a';
+        ctx.fillRect(decor.x - 10, decor.y - 25, 8, 3);
+        ctx.fillRect(decor.x + 2, decor.y - 12, 8, 3);
+        ctx.fillStyle = '#facc15';
+        ctx.beginPath();
+        ctx.ellipse(decor.x, decor.y - 75, 28, 36, 0, 0, Math.PI * 2);
+        ctx.fill();
+      } else if (decor.type === 'tree_maple') {
+        // Autumn Red/Orange Maple Tree
+        ctx.fillStyle = '#5c2c16';
+        ctx.fillRect(decor.x - 12, decor.y - 30, 24, 45);
+        ctx.fillStyle = '#ea580c';
+        ctx.beginPath();
+        ctx.arc(decor.x - 20, decor.y - 60, 28, 0, Math.PI * 2);
+        ctx.arc(decor.x + 20, decor.y - 60, 28, 0, Math.PI * 2);
+        ctx.arc(decor.x, decor.y - 80, 32, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = '#f97316';
+        ctx.beginPath();
+        ctx.arc(decor.x, decor.y - 70, 24, 0, Math.PI * 2);
+        ctx.fill();
+      } else if (decor.type === 'mushroom_red' || decor.type === 'mushroom_glow') {
+        const isGlow = decor.type === 'mushroom_glow';
+        ctx.fillStyle = '#f8fafc';
+        ctx.fillRect(decor.x - 4, decor.y - 6, 8, 14);
+        ctx.fillStyle = isGlow ? '#a855f7' : '#ef4444';
+        ctx.beginPath();
+        ctx.arc(decor.x, decor.y - 6, 12, Math.PI, 0);
+        ctx.fill();
+        ctx.fillStyle = isGlow ? '#67e8f9' : '#ffffff';
+        ctx.beginPath();
+        ctx.arc(decor.x - 5, decor.y - 10, 2, 0, Math.PI * 2);
+        ctx.arc(decor.x + 4, decor.y - 11, 2, 0, Math.PI * 2);
+        ctx.arc(decor.x, decor.y - 14, 2, 0, Math.PI * 2);
         ctx.fill();
       }
     }
@@ -1454,15 +1967,12 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
     for (const bf of butterFliesRef.current) {
       const wingFlap = Math.abs(Math.sin(bf.phase * 3)) * 4 + 2;
       ctx.fillStyle = bf.color;
-      // Left wing
       ctx.beginPath();
       ctx.ellipse(bf.x - 3, bf.y, wingFlap, 4, -0.4, 0, Math.PI * 2);
       ctx.fill();
-      // Right wing
       ctx.beginPath();
       ctx.ellipse(bf.x + 3, bf.y, wingFlap, 4, 0.4, 0, Math.PI * 2);
       ctx.fill();
-      // Body
       ctx.fillStyle = '#0f172a';
       ctx.beginPath();
       ctx.ellipse(bf.x, bf.y, 1, 3, 0, 0, Math.PI * 2);
@@ -1519,7 +2029,6 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
   ) => {
     ctx.save();
     if (wType === 'night') {
-      // Deep blue/purple nighttime overlay with soft light circle around Bunny
       const nightGrad = ctx.createRadialGradient(bunny.x, bunny.y, 30, bunny.x, bunny.y, 220);
       nightGrad.addColorStop(0, 'rgba(15, 23, 42, 0.2)');
       nightGrad.addColorStop(0.5, 'rgba(15, 23, 42, 0.7)');
@@ -1528,7 +2037,6 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
       ctx.fillStyle = nightGrad;
       ctx.fillRect(camX, camY, width, height);
 
-      // Fireflies glowing in dark
       for (const ff of firefliesRef.current) {
         ctx.fillStyle = `rgba(250, 204, 21, ${ff.glow * 0.9})`;
         ctx.beginPath();
@@ -1540,15 +2048,12 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
         ctx.fill();
       }
     } else if (wType === 'afternoon') {
-      // Warm golden hour sunset tint
       ctx.fillStyle = 'rgba(245, 158, 11, 0.16)';
       ctx.fillRect(camX, camY, width, height);
     } else if (wType === 'rainy') {
-      // Moody cool blue-gray rain tint
       ctx.fillStyle = 'rgba(30, 41, 59, 0.28)';
       ctx.fillRect(camX, camY, width, height);
     } else if (wType === 'sunny') {
-      // Gentle sunbeam rays
       ctx.fillStyle = 'rgba(254, 240, 138, 0.05)';
       ctx.beginPath();
       ctx.moveTo(camX, camY);
