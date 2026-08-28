@@ -1,0 +1,6 @@
+{
+  "name": "Game Chú Thỏ Đi Rừng",
+  "description": "Trò chơi phiêu lưu dẫn chú thỏ đáng yêu đi dạo và khám phá khu rừng diệu kỳ.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
