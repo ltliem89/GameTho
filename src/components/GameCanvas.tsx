@@ -280,8 +280,8 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
 
     // Sparse Grass Clusters Across Ground (Cỏ lưa thưa dưới chân)
     const grassClumps: SparseGrassClump[] = [];
-    const grassShades = ['#15803d', '#16a34a', '#22c55e', '#4ade80', '#84cc16', '#65a30d'];
-    for (let i = 0; i < 360; i++) {
+    const grassShades = ['#15803d', '#16a34a', '#22c55e', '#2e9d56', '#34a853', '#48bb78', '#529e2f', '#65a30d'];
+    for (let i = 0; i < 380; i++) {
       const gx = 100 + Math.random() * (WORLD_WIDTH - 200);
       const gy = 100 + Math.random() * (WORLD_HEIGHT - 200);
 
@@ -1274,7 +1274,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
           vx: (Math.random() - 0.5) * 1.2,
           vy: -Math.random() * 1.4,
           size: 2.5,
-          color: Math.random() < 0.5 ? '#86efac' : '#4ade80',
+          color: Math.random() < 0.5 ? '#22c55e' : '#15803d',
           alpha: 0.8,
           life: 0,
           maxLife: 22,
@@ -1358,17 +1358,18 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
     bunny: BunnyEntity,
     time: number
   ) => {
-    let topColor = '#4ade80';
-    let bottomColor = '#22c55e';
+    // Realistic lush natural meadow grass palette
+    let topColor = '#2ba154';
+    let bottomColor = '#1b6b38';
     if (currentW === 'night') {
-      topColor = '#1e3a2f';
-      bottomColor = '#132a21';
+      topColor = '#0f331f';
+      bottomColor = '#082013';
     } else if (currentW === 'afternoon') {
-      topColor = '#84cc16';
-      bottomColor = '#4d7c0f';
+      topColor = '#5ea01d';
+      bottomColor = '#3a660d';
     } else if (currentW === 'rainy' || currentW === 'rain') {
-      topColor = '#3f6212';
-      bottomColor = '#283618';
+      topColor = '#225a32';
+      bottomColor = '#143d20';
     }
 
     const bgGrad = ctx.createLinearGradient(0, 0, WORLD_WIDTH, WORLD_HEIGHT);
@@ -1376,6 +1377,27 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
     bgGrad.addColorStop(1, bottomColor);
     ctx.fillStyle = bgGrad;
     ctx.fillRect(0, 0, WORLD_WIDTH, WORLD_HEIGHT);
+
+    // Subtle Natural Meadow Turf Texture & Dappled Sunlight
+    ctx.save();
+    ctx.fillStyle = currentW === 'night' ? 'rgba(6, 78, 40, 0.15)' : 'rgba(255, 255, 255, 0.04)';
+    // Soft organic light patches
+    ctx.beginPath();
+    ctx.ellipse(600, 500, 260, 140, 0.2, 0, Math.PI * 2);
+    ctx.ellipse(1400, 850, 320, 160, -0.15, 0, Math.PI * 2);
+    ctx.ellipse(2200, 1400, 380, 200, 0.1, 0, Math.PI * 2);
+    ctx.ellipse(900, 1700, 280, 150, -0.2, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Soft deeper shadow patches
+    ctx.fillStyle = currentW === 'night' ? 'rgba(2, 20, 10, 0.25)' : 'rgba(15, 60, 30, 0.08)';
+    ctx.beginPath();
+    ctx.ellipse(950, 420, 220, 120, -0.1, 0, Math.PI * 2);
+    ctx.ellipse(1850, 720, 260, 130, 0.25, 0, Math.PI * 2);
+    ctx.ellipse(1500, 1550, 310, 170, -0.1, 0, Math.PI * 2);
+    ctx.ellipse(400, 1300, 240, 120, 0.3, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
 
     // Forest Walking Dirt Trails
     ctx.save();
@@ -1416,7 +1438,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
         ctx.stroke();
 
         // Tip highlight
-        ctx.strokeStyle = currentW === 'night' ? '#166534' : '#bef264';
+        ctx.strokeStyle = currentW === 'night' ? '#166534' : '#4ade80';
         ctx.lineWidth = 1;
         ctx.beginPath();
         ctx.moveTo(gx + blade.dx + blade.bend * 0.7, gy - blade.h * 0.75);
@@ -1475,7 +1497,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
     // 2. Dynamic Sparse Grass Under Bunny's Feet (Cỏ lưa thưa dưới chân thỏ nhún nhảy)
     if (!isPointInRiver(bunny.x, bunny.y)) {
       const swayOffset = bunny.isMoving ? Math.sin(time * 0.015) * 4 : 0;
-      const grassColor = currentW === 'night' ? '#166534' : '#4ade80';
+      const grassColor = currentW === 'night' ? '#14532d' : '#22c55e';
 
       ctx.strokeStyle = grassColor;
       ctx.lineWidth = 1.6;
