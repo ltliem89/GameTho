@@ -14,6 +14,7 @@ import {
   BunnyAccessory,
   BunnySkin,
   BunnyUpgrades,
+  CatSkin,
   CharacterType,
   DiscoveryStats,
   EnvironmentalRescue,
@@ -156,6 +157,7 @@ export default function App() {
   const [characterType, setCharacterType] = useState<CharacterType>('bunny');
   const [bunnySkin, setBunnySkin] = useState<BunnySkin>('white');
   const [squirrelSkin, setSquirrelSkin] = useState<SquirrelSkin>('chestnut');
+  const [catSkin, setCatSkin] = useState<CatSkin>('calico');
   const [bunnyAccessory, setBunnyAccessory] = useState<BunnyAccessory>('flower');
   const [speedMultiplier, setSpeedMultiplier] = useState<number>(1);
   const [currentZone, setCurrentZone] = useState<string>('Thảm Cỏ Nhà Thỏ');
@@ -382,6 +384,11 @@ export default function App() {
       {/* 1. Top HUD Header */}
       <TopHeader
         stats={stats}
+        characterType={characterType}
+        onSelectCharacter={(type) => {
+          setCharacterType(type);
+          setStats((prev) => ({ ...prev, characterType: type }));
+        }}
         currentZone={currentZone}
         weather={weather}
         onWeatherChange={(w) => {
@@ -411,6 +418,7 @@ export default function App() {
           characterType={characterType}
           bunnySkin={bunnySkin}
           squirrelSkin={squirrelSkin}
+          catSkin={catSkin}
           bunnyAccessory={bunnyAccessory}
           speedMultiplier={speedMultiplier}
           upgrades={stats.upgrades}
@@ -439,10 +447,18 @@ export default function App() {
           className="fixed bottom-20 sm:bottom-24 left-1/2 -translate-x-1/2 z-30 pointer-events-auto max-w-sm sm:max-w-md w-[92%] bg-slate-900/95 backdrop-blur-xl border-2 border-emerald-400/50 rounded-2xl sm:rounded-3xl p-3 sm:p-4.5 shadow-[0_15px_40px_rgba(0,0,0,0.8),0_0_30px_rgba(16,185,129,0.25)] animate-bounce select-none"
         >
           <div className="flex items-center gap-2.5 sm:gap-3.5">
-            <span className="text-2xl sm:text-4xl filter drop-shadow-md">{characterType === 'squirrel' ? '🐿️' : '🐰'}</span>
+            <span className="text-2xl sm:text-4xl filter drop-shadow-md">
+              {characterType === 'cat' ? '🐱' : characterType === 'squirrel' ? '🐿️' : '🐰'}
+            </span>
             <div className="flex-1 min-w-0">
               <h1 className="text-xs sm:text-sm font-black text-white flex items-center gap-1.5">
-                <span>{characterType === 'squirrel' ? 'Dạo chơi cùng Bé Sóc Tinh Nghịch!' : 'Đi rừng cùng Chú Thỏ!'}</span>
+                <span>
+                  {characterType === 'cat'
+                    ? 'Dạo chơi cùng Bé Mèo Nhanh Nhẹn!'
+                    : characterType === 'squirrel'
+                    ? 'Dạo chơi cùng Bé Sóc Tinh Nghịch!'
+                    : 'Đi rừng cùng Chú Thỏ!'}
+                </span>
                 <Sparkles className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-amber-400 fill-current animate-pulse" />
               </h1>
               <p className="text-[11px] sm:text-xs text-slate-200 mt-0.5 sm:mt-1 leading-snug font-medium line-clamp-2 sm:line-clamp-none">
@@ -471,13 +487,15 @@ export default function App() {
           setCharacterType(type);
           setStats((prev) => ({ ...prev, characterType: type }));
         }}
-        currentSkin={characterType === 'squirrel' ? squirrelSkin : bunnySkin}
+        currentSkin={characterType === 'cat' ? catSkin : characterType === 'squirrel' ? squirrelSkin : bunnySkin}
         currentAccessory={bunnyAccessory}
         unlockedSkins={stats.unlockedSkins}
         unlockedSquirrelSkins={stats.unlockedSquirrelSkins}
         unlockedAccessories={stats.unlockedAccessories}
         onSelectSkin={(skin) => {
-          if (characterType === 'squirrel') {
+          if (characterType === 'cat') {
+            setCatSkin(skin as CatSkin);
+          } else if (characterType === 'squirrel') {
             setSquirrelSkin(skin as SquirrelSkin);
           } else {
             setBunnySkin(skin as BunnySkin);

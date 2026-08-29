@@ -1,9 +1,10 @@
 export type Direction = 'left' | 'right' | 'up' | 'down';
 
-export type CharacterType = 'bunny' | 'squirrel';
+export type CharacterType = 'bunny' | 'squirrel' | 'cat';
 
 export type BunnySkin = 'white' | 'caramel' | 'spotted' | 'pink' | 'shadow' | 'golden' | 'galaxy';
 export type SquirrelSkin = 'chestnut' | 'red_fur' | 'golden_autumn' | 'silver_frost' | 'shadow_night' | 'galaxy_star';
+export type CatSkin = 'calico' | 'orange_tabby' | 'tuxedo' | 'siamese' | 'black_panther' | 'fluffy_white' | 'galaxy_cat';
 
 export type BunnyAccessory = 'none' | 'flower' | 'straw_hat' | 'red_ribbon' | 'carrot_pack' | 'glasses' | 'crown' | 'fairy_wings' | 'witch_hat' | 'rainbow_wreath';
 
@@ -37,13 +38,14 @@ export interface BunnyEntity {
   jumpHeight: number;
   isJumping: boolean;
   characterType?: CharacterType;
-  skin: BunnySkin | SquirrelSkin;
+  skin: BunnySkin | SquirrelSkin | CatSkin;
   accessory: BunnyAccessory;
   carrotsEaten: number;
   cloversFound: number;
   berriesPicked: number;
   acornsEaten?: number;
   applesEaten?: number;
+  butterfliesCaught?: number;
   hurtTimer: number; // for flashing red when touching hazardous plants
   shieldTimer: number; // golden shield active timer
   auraPhase: number;
@@ -53,6 +55,9 @@ export interface BunnyEntity {
   onVineId?: string;
   vineProgress?: number; // 0 to 1 along vine
   isGliding?: boolean;
+  isPouncing?: boolean;
+  pounceTimer?: number;
+  pounceCooldown?: number;
 }
 
 export type CollectibleType =
@@ -249,6 +254,7 @@ export interface Quest {
   rewardCarrots: number;
   rewardSkin?: BunnySkin;
   rewardSquirrelSkin?: SquirrelSkin;
+  rewardCatSkin?: CatSkin;
   rewardAccessory?: BunnyAccessory;
   targetId?: string;
 }
@@ -308,6 +314,7 @@ export interface DiscoveryStats {
   acorns: number;
   treesClimbed: number;
   vinesTraversed: number;
+  butterfliesCaught?: number;
   characterType: CharacterType;
   witheredPlantsRevived: number;
   rescuesCompleted: string[]; // ids of rescued environmental missions
@@ -323,6 +330,7 @@ export interface DiscoveryStats {
   questsCompletedCount: number;
   unlockedSkins: BunnySkin[];
   unlockedSquirrelSkins: SquirrelSkin[];
+  unlockedCatSkins?: CatSkin[];
   unlockedAccessories: BunnyAccessory[];
   upgrades: BunnyUpgrades;
   achievements: Achievement[];

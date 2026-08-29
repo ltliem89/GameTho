@@ -1,10 +1,12 @@
 import React from 'react';
-import { DiscoveryStats, WeatherType } from '../types';
+import { CharacterType, DiscoveryStats, WeatherType } from '../types';
 import { Volume2, VolumeX, Music, Music2, Sparkles, Map, HelpCircle, Sun, Sunset, Moon, CloudRain, Zap, Award, ArrowUpCircle } from 'lucide-react';
 import { sounds } from '../utils/audio';
 
 interface TopHeaderProps {
   stats: DiscoveryStats;
+  characterType?: CharacterType;
+  onSelectCharacter?: (type: CharacterType) => void;
   currentZone: string;
   weather: WeatherType;
   onWeatherChange: (w: WeatherType) => void;
@@ -25,6 +27,8 @@ interface TopHeaderProps {
 
 export const TopHeader: React.FC<TopHeaderProps> = ({
   stats,
+  characterType = 'bunny',
+  onSelectCharacter,
   currentZone,
   weather,
   onWeatherChange,
@@ -47,21 +51,29 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
   const xpInCurrentLevel = currentXp % 100;
   const xpPercent = Math.min(100, Math.round(xpInCurrentLevel));
 
+  const charAvatar = characterType === 'cat' ? '🐱' : characterType === 'squirrel' ? '🐿️' : '🐰';
+  const charTitle =
+    characterType === 'cat'
+      ? 'Bé Mèo Rừng'
+      : characterType === 'squirrel'
+      ? 'Sóc Nhí Leo Cây'
+      : 'Thỏ Con Nhút Nhát';
+
   return (
     <header id="top-game-header" className="fixed top-2 sm:top-3 inset-x-2 sm:inset-x-6 z-35 pointer-events-none flex flex-col gap-1.5 sm:gap-2">
       {/* Top Bar Container: 2-Row Stack on Mobile, Single Row on Desktop */}
       <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-1.5 sm:gap-2">
         {/* Left / Top Row: Level Bar, Zone & Collectible Counters */}
         <div className="pointer-events-auto flex items-center justify-between sm:justify-start flex-wrap gap-1 sm:gap-2">
-          {/* Bunny Level & XP Bar */}
+          {/* Character Level & XP Bar */}
           <div
             id="bunny-level-xp-card"
             className="flex items-center gap-1.5 sm:gap-2 px-2 sm:px-3 py-1 sm:py-1.5 rounded-xl sm:rounded-2xl bg-slate-900/90 backdrop-blur-md border border-amber-400/40 shadow-sm sm:shadow-[0_4px_16px_rgba(245,158,11,0.25)] text-xs font-black text-white cursor-pointer hover:border-amber-300 transition-all active:scale-95 select-none"
             onClick={onOpenUpgrades}
-            title="Nhấn để xem bảng Nâng Cấp & Cấp Độ"
+            title={`Nhấn để xem bảng Nâng Cấp & Cấp Độ của ${charTitle}`}
           >
             <div className="flex items-center gap-1 text-amber-300">
-              <span className="text-xs sm:text-sm">🐰</span>
+              <span className="text-xs sm:text-base animate-bounce">{charAvatar}</span>
               <span className="text-[11px] sm:text-xs">
                 <span className="hidden sm:inline">CẤP </span>Lv.{currentLevel}
               </span>
@@ -73,6 +85,62 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
               />
             </div>
             <span className="hidden sm:inline text-[10px] text-amber-400 font-bold">{xpInCurrentLevel}/100 XP</span>
+          </div>
+
+          {/* Quick Character 1-Click Switcher Pill */}
+          <div
+            id="quick-char-switcher"
+            className="flex items-center bg-slate-900/90 backdrop-blur-md border border-white/20 p-0.5 sm:p-1 rounded-xl sm:rounded-2xl shadow-sm text-xs font-black select-none gap-0.5"
+            title="Đổi nhanh nhân vật: Thỏ Con 🐰, Sóc Nhí 🐿️ hoặc Bé Mèo 🐱"
+          >
+            <button
+              id="quick-btn-bunny"
+              onClick={() => {
+                sounds.playHop();
+                onSelectCharacter?.('bunny');
+              }}
+              className={`flex items-center gap-1 px-1.5 sm:px-2 py-0.5 sm:py-1 rounded-lg sm:rounded-xl transition-all ${
+                characterType === 'bunny'
+                  ? 'bg-gradient-to-r from-pink-500 to-rose-400 text-white shadow-md font-black scale-105'
+                  : 'text-slate-400 hover:text-white hover:bg-white/10'
+              }`}
+              title="Chọn Thỏ Con (Nhảy cao & lướt nhanh)"
+            >
+              <span>🐰</span>
+              <span className="hidden lg:inline text-[10px]">Thỏ</span>
+            </button>
+            <button
+              id="quick-btn-squirrel"
+              onClick={() => {
+                sounds.playAcornMunch();
+                onSelectCharacter?.('squirrel');
+              }}
+              className={`flex items-center gap-1 px-1.5 sm:px-2 py-0.5 sm:py-1 rounded-lg sm:rounded-xl transition-all ${
+                characterType === 'squirrel'
+                  ? 'bg-gradient-to-r from-amber-500 to-yellow-400 text-amber-950 shadow-md font-black scale-105'
+                  : 'text-slate-400 hover:text-white hover:bg-white/10'
+              }`}
+              title="Chọn Sóc Nhí (Trèo cây & chuyền cành)"
+            >
+              <span>🐿️</span>
+              <span className="hidden lg:inline text-[10px]">Sóc</span>
+            </button>
+            <button
+              id="quick-btn-cat"
+              onClick={() => {
+                sounds.playMeow();
+                onSelectCharacter?.('cat');
+              }}
+              className={`flex items-center gap-1 px-1.5 sm:px-2 py-0.5 sm:py-1 rounded-lg sm:rounded-xl transition-all ${
+                characterType === 'cat'
+                  ? 'bg-gradient-to-r from-orange-500 to-amber-400 text-slate-950 shadow-md font-black scale-105'
+                  : 'text-slate-400 hover:text-white hover:bg-white/10'
+              }`}
+              title="Chọn Bé Mèo (Vồ mồi & bắt bướm)"
+            >
+              <span>🐱</span>
+              <span className="hidden lg:inline text-[10px]">Mèo</span>
+            </button>
           </div>
 
           {/* Current Forest Zone Pill */}
@@ -284,18 +352,18 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
             {musicActive ? <Music className="w-3.5 h-3.5 sm:w-4 sm:h-4 animate-bounce" /> : <Music2 className="w-3.5 h-3.5 sm:w-4 sm:h-4" />}
           </button>
 
-          {/* Wardrobe Button */}
+          {/* Wardrobe & Character Selector Button */}
           <button
             id="btn-open-wardrobe-header"
             onClick={() => {
               sounds.playChirp();
               onOpenWardrobe();
             }}
-            className="p-1.5 sm:px-3 sm:py-1.5 rounded-xl sm:rounded-2xl bg-gradient-to-r from-pink-500 via-rose-500 to-pink-600 hover:from-pink-400 hover:to-rose-400 text-white font-black text-xs shadow-sm sm:shadow-[0_4px_16px_rgba(244,63,94,0.35)] active:scale-90 transition-all border border-pink-300/40 flex items-center gap-1.5"
-            title="Mở tủ đồ trang phục"
+            className="p-1.5 sm:px-3 sm:py-1.5 rounded-xl sm:rounded-2xl bg-gradient-to-r from-pink-500 via-rose-500 to-amber-500 hover:from-pink-400 hover:to-amber-400 text-white font-black text-xs shadow-sm sm:shadow-[0_4px_16px_rgba(244,63,94,0.35)] active:scale-90 transition-all border border-pink-200/50 flex items-center gap-1.5"
+            title="Đổi nhân vật (Thỏ, Sóc, Mèo) & Thay trang phục tủ đồ"
           >
-            <Sparkles className="w-3.5 h-3.5 animate-spin" />
-            <span className="hidden sm:inline">Tủ Đồ</span>
+            <span className="text-xs sm:text-sm animate-pulse">🐾</span>
+            <span className="hidden sm:inline">Đổi Thú & Tủ Đồ</span>
           </button>
 
           {/* Map Button */}

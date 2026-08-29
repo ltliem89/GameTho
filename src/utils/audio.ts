@@ -219,6 +219,95 @@ class SoundSystem {
     }
   }
 
+  public playMeow() {
+    if (!this.soundEnabled) return;
+    this.ensureContext();
+    if (!this.ctx) return;
+
+    try {
+      const now = this.ctx.currentTime;
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+
+      osc.type = 'sine';
+      // Sweet melodic meow with natural pitch curve: rise then smooth downward inflection
+      osc.frequency.setValueAtTime(440, now);
+      osc.frequency.linearRampToValueAtTime(880, now + 0.08);
+      osc.frequency.exponentialRampToValueAtTime(587, now + 0.28);
+
+      gain.gain.setValueAtTime(0.01, now);
+      gain.gain.linearRampToValueAtTime(0.15, now + 0.06);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.28);
+
+      osc.connect(gain);
+      gain.connect(this.ctx.destination);
+
+      osc.start(now);
+      osc.stop(now + 0.28);
+    } catch {
+      // ignore
+    }
+  }
+
+  public playPurr() {
+    if (!this.soundEnabled) return;
+    this.ensureContext();
+    if (!this.ctx) return;
+
+    try {
+      const now = this.ctx.currentTime;
+      for (let i = 0; i < 4; i++) {
+        const offset = i * 0.06;
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(95 + (i % 2 === 0 ? 15 : 0), now + offset);
+        osc.frequency.exponentialRampToValueAtTime(80, now + offset + 0.05);
+
+        gain.gain.setValueAtTime(0.08, now + offset);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + offset + 0.05);
+
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+
+        osc.start(now + offset);
+        osc.stop(now + offset + 0.05);
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  public playPounce() {
+    if (!this.soundEnabled) return;
+    this.ensureContext();
+    if (!this.ctx) return;
+
+    try {
+      const now = this.ctx.currentTime;
+      // Swift feline leap whoosh + paw landing
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(320, now);
+      osc.frequency.exponentialRampToValueAtTime(750, now + 0.08);
+      osc.frequency.exponentialRampToValueAtTime(220, now + 0.16);
+
+      gain.gain.setValueAtTime(0.18, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.18);
+
+      osc.connect(gain);
+      gain.connect(this.ctx.destination);
+
+      osc.start(now);
+      osc.stop(now + 0.18);
+    } catch {
+      // ignore
+    }
+  }
+
   public playAnimalGreet() {
     if (!this.soundEnabled) return;
     this.ensureContext();

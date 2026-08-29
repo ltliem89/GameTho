@@ -3,6 +3,7 @@ import {
   BunnyAccessory,
   BunnyEntity,
   BunnySkin,
+  CatSkin,
   CharacterType,
   CollectibleItem,
   DiscoveryStats,
@@ -35,6 +36,7 @@ interface GameCanvasProps {
   weather: WeatherType;
   bunnySkin: BunnySkin;
   squirrelSkin?: SquirrelSkin;
+  catSkin?: CatSkin;
   characterType?: CharacterType;
   bunnyAccessory: BunnyAccessory;
   speedMultiplier: number;
@@ -95,6 +97,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
   characterType = 'bunny',
   bunnySkin,
   squirrelSkin = 'chestnut',
+  catSkin = 'calico',
   bunnyAccessory,
   speedMultiplier,
   upgrades = DEFAULT_UPGRADES,
@@ -160,9 +163,14 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
   // Sync Character, Skin & Accessory to ref
   useEffect(() => {
     bunnyRef.current.characterType = characterType;
-    bunnyRef.current.skin = characterType === 'squirrel' ? squirrelSkin : bunnySkin;
+    bunnyRef.current.skin =
+      characterType === 'cat'
+        ? catSkin
+        : characterType === 'squirrel'
+        ? squirrelSkin
+        : bunnySkin;
     bunnyRef.current.accessory = bunnyAccessory;
-  }, [characterType, bunnySkin, squirrelSkin, bunnyAccessory]);
+  }, [characterType, bunnySkin, squirrelSkin, catSkin, bunnyAccessory]);
 
   // Sync Rescues from props
   useEffect(() => {
@@ -2909,8 +2917,377 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
     ctx.restore();
   };
 
+  // Draw Cat with silky coat, elegant tail, playful whiskers, pointed triangular ears and skins
+  const drawCat = (ctx: CanvasRenderingContext2D, bunny: BunnyEntity, currentUpgrades: BunnyUpgrades | undefined, time: number) => {
+    ctx.save();
+    const upg = currentUpgrades || DEFAULT_UPGRADES;
+    const isPouncing = bunny.isJumping;
+    const hopYOffset =
+      Math.abs(Math.sin(bunny.hopPhase)) * 7 +
+      (isPouncing ? Math.sin(bunny.jumpHeight) * (28 + (upg.superHopLevel || 0) * 8) : 0);
+    const stretch = bunny.isMoving ? 1 + Math.sin(bunny.hopPhase * 2) * 0.1 : 1;
+
+    // Ground Shadow
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.22)';
+    ctx.beginPath();
+    const shadowScale = Math.max(0.35, 1 - hopYOffset / 42);
+    ctx.ellipse(bunny.x, bunny.y + 12, 14 * shadowScale, 5.5 * shadowScale, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // 1. Level Aura Glow
+    if ((upg.level || 1) >= 2) {
+      const auraPulse = (Math.sin(time * 0.006) + 1) / 2;
+      ctx.strokeStyle = (upg.level || 1) >= 5 ? '#f59e0b' : '#38bdf8';
+      ctx.lineWidth = 2.5;
+      ctx.globalAlpha = 0.4 + auraPulse * 0.3;
+      ctx.beginPath();
+      ctx.arc(bunny.x, bunny.y - hopYOffset, 22 + (upg.level || 1) * 2, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
+
+    // 2. Shield Bubble
+    if ((upg.shieldLevel || 0) >= 1) {
+      const shieldGlow = (Math.sin(time * 0.008) + 1) / 2;
+      ctx.strokeStyle = `rgba(52, 211, 153, ${0.4 + shieldGlow * 0.4})`;
+      ctx.fillStyle = `rgba(52, 211, 153, 0.08)`;
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.arc(bunny.x, bunny.y - hopYOffset - 3, 25, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+    }
+
+    ctx.translate(bunny.x, bunny.y - hopYOffset);
+
+    if (bunny.facing === 'left') {
+      ctx.scale(-1, 1);
+    }
+
+    // Cat Skin Palette Configuration
+    let mainCoat = '#ffffff';
+    let spotColor = '#ea580c'; // orange patch for calico
+    let darkSpotColor = '#1e293b'; // black patch for calico
+    let chestColor = '#ffffff';
+    let earInnerColor = '#fda4af';
+    let eyeColor = '#10b981'; // bright green eyes
+    let noseColor = '#f43f5e';
+    let sockColor = '#ffffff';
+
+    if (bunny.skin === 'orange_tabby') {
+      mainCoat = '#f97316';
+      spotColor = '#c2410c';
+      darkSpotColor = '#9a3412';
+      chestColor = '#ffedd5';
+      eyeColor = '#eab308';
+      sockColor = '#ffedd5';
+    } else if (bunny.skin === 'tuxedo') {
+      mainCoat = '#0f172a';
+      spotColor = '#0f172a';
+      darkSpotColor = '#0f172a';
+      chestColor = '#ffffff';
+      eyeColor = '#84cc16';
+      sockColor = '#ffffff';
+    } else if (bunny.skin === 'siamese') {
+      mainCoat = '#fef3c7';
+      spotColor = '#78350f';
+      darkSpotColor = '#451a03';
+      chestColor = '#fef3c7';
+      earInnerColor = '#451a03';
+      eyeColor = '#0284c7'; // sapphire blue eyes
+      noseColor = '#451a03';
+      sockColor = '#78350f';
+    } else if (bunny.skin === 'black_panther') {
+      mainCoat = '#020617';
+      spotColor = '#0f172a';
+      darkSpotColor = '#020617';
+      chestColor = '#1e293b';
+      earInnerColor = '#334155';
+      eyeColor = '#facc15'; // golden eyes
+      noseColor = '#0f172a';
+      sockColor = '#020617';
+    } else if (bunny.skin === 'fluffy_white') {
+      mainCoat = '#ffffff';
+      spotColor = '#f1f5f9';
+      darkSpotColor = '#e2e8f0';
+      chestColor = '#ffffff';
+      eyeColor = '#0ea5e9'; // odd-eyed or arctic blue
+      sockColor = '#ffffff';
+    } else if (bunny.skin === 'galaxy_cat') {
+      mainCoat = '#312e81';
+      spotColor = '#9333ea';
+      darkSpotColor = '#4c1d95';
+      chestColor = '#e0e7ff';
+      earInnerColor = '#c084fc';
+      eyeColor = '#38bdf8';
+      sockColor = '#c084fc';
+    }
+
+    // --- Elegant Swishing Cat Tail ---
+    const tailSway = Math.sin(time * 0.007 + bunny.hopPhase) * 0.35;
+    ctx.save();
+    ctx.translate(-11, 2);
+    ctx.rotate(-0.4 + tailSway);
+
+    // Render S-curve smooth cat tail
+    ctx.strokeStyle = bunny.skin === 'calico' ? spotColor : mainCoat;
+    ctx.lineWidth = 4.5;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.quadraticCurveTo(-14, -8, -12, -22);
+    ctx.quadraticCurveTo(-10, -30, -5, -32);
+    ctx.stroke();
+
+    // Tail Tip Accent
+    if (bunny.skin === 'tuxedo' || bunny.skin === 'siamese' || bunny.skin === 'calico') {
+      ctx.strokeStyle = bunny.skin === 'siamese' ? darkSpotColor : sockColor;
+      ctx.lineWidth = 4.5;
+      ctx.beginPath();
+      ctx.moveTo(-10, -28);
+      ctx.quadraticCurveTo(-8, -31, -5, -32);
+      ctx.stroke();
+    }
+    ctx.restore();
+
+    // --- Back Leg & Paw (with Socks) ---
+    ctx.fillStyle = mainCoat;
+    ctx.beginPath();
+    ctx.ellipse(-7, 8, 5.5, 4.5, -0.2, 0, Math.PI * 2);
+    ctx.fill();
+    // Back White Sock
+    ctx.fillStyle = sockColor;
+    ctx.beginPath();
+    ctx.ellipse(-8, 10, 4, 3, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // --- Cat Torso ---
+    ctx.fillStyle = mainCoat;
+    ctx.beginPath();
+    ctx.ellipse(0, 2, 13 * stretch, 10 / stretch, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Calico Patches on Back / Tabby Stripes
+    if (bunny.skin === 'calico') {
+      ctx.fillStyle = spotColor; // Orange patch
+      ctx.beginPath();
+      ctx.ellipse(-4, -2, 5, 4, 0.4, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.fillStyle = darkSpotColor; // Black patch
+      ctx.beginPath();
+      ctx.ellipse(3, -1, 4.5, 3.5, -0.3, 0, Math.PI * 2);
+      ctx.fill();
+    } else if (bunny.skin === 'orange_tabby') {
+      ctx.strokeStyle = spotColor;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(-4, -6);
+      ctx.lineTo(-4, 0);
+      ctx.moveTo(1, -6);
+      ctx.lineTo(1, 1);
+      ctx.moveTo(6, -5);
+      ctx.lineTo(6, 0);
+      ctx.stroke();
+    }
+
+    // --- Fluffy Chest & Belly Fur ---
+    ctx.fillStyle = chestColor;
+    ctx.beginPath();
+    ctx.ellipse(5, 4, 6.5, 6, 0.2, 0, Math.PI * 2);
+    ctx.fill();
+
+    // --- Front Leg & Paws ---
+    ctx.fillStyle = mainCoat;
+    ctx.beginPath();
+    ctx.ellipse(6, 7, 4.5, 4, 0.1, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = sockColor;
+    ctx.beginPath();
+    ctx.ellipse(7, 10, 4, 3, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // --- Cat Head ---
+    ctx.fillStyle = mainCoat;
+    ctx.beginPath();
+    ctx.arc(8, -7, 9.5, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Calico/Siamese Head Markings
+    if (bunny.skin === 'siamese') {
+      ctx.fillStyle = darkSpotColor; // Dark brown mask
+      ctx.beginPath();
+      ctx.ellipse(11, -6, 5, 4.5, 0, 0, Math.PI * 2);
+      ctx.fill();
+    } else if (bunny.skin === 'calico') {
+      ctx.fillStyle = spotColor;
+      ctx.beginPath();
+      ctx.arc(5, -11, 4, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // --- Pointed Cat Triangular Ears ---
+    // Back Ear
+    ctx.save();
+    ctx.translate(3, -13);
+    ctx.rotate(-0.2);
+    ctx.fillStyle = bunny.skin === 'siamese' ? darkSpotColor : mainCoat;
+    ctx.beginPath();
+    ctx.moveTo(-3, 0);
+    ctx.lineTo(0, -9);
+    ctx.lineTo(4, 0);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = earInnerColor;
+    ctx.beginPath();
+    ctx.moveTo(-1.5, 0);
+    ctx.lineTo(0, -6.5);
+    ctx.lineTo(2.5, 0);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+
+    // Front Ear
+    ctx.save();
+    ctx.translate(9, -13);
+    ctx.rotate(0.12);
+    ctx.fillStyle = bunny.skin === 'siamese' ? darkSpotColor : mainCoat;
+    ctx.beginPath();
+    ctx.moveTo(-3.5, 0);
+    ctx.lineTo(0, -10);
+    ctx.lineTo(4, 0);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = earInnerColor;
+    ctx.beginPath();
+    ctx.moveTo(-2, 0);
+    ctx.lineTo(0, -7.5);
+    ctx.lineTo(2.5, 0);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+
+    // --- Almond Shaped Cat Eye ---
+    ctx.fillStyle = eyeColor;
+    ctx.beginPath();
+    ctx.ellipse(11, -7, 2.8, 3.4, 0.1, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Slit Cat Pupil (dilates dynamically)
+    ctx.fillStyle = '#020617';
+    ctx.beginPath();
+    ctx.ellipse(11.2, -7, 1.2, 2.8, 0.05, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Eye Sparkle Catchlights
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath();
+    ctx.arc(10.3, -8.5, 1, 0, Math.PI * 2);
+    ctx.arc(11.8, -6.5, 0.5, 0, Math.PI * 2);
+    ctx.fill();
+
+    // --- Cute Cat Nose & Muzzle ---
+    ctx.fillStyle = noseColor;
+    ctx.beginPath();
+    ctx.moveTo(15, -6);
+    ctx.lineTo(16.8, -7);
+    ctx.lineTo(16.8, -5);
+    ctx.closePath();
+    ctx.fill();
+
+    // Muzzle / Cheek Puffs
+    ctx.fillStyle = chestColor;
+    ctx.beginPath();
+    ctx.ellipse(13.5, -4.5, 2.8, 2, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // --- Playful Long Whiskers ---
+    const catWhiskerTwitch = Math.sin(time * 0.015) * 1.1;
+    ctx.strokeStyle = bunny.skin === 'black_panther' || bunny.skin === 'galaxy_cat' ? '#cbd5e1' : '#94a3b8';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(14, -5);
+    ctx.lineTo(22, -8 + catWhiskerTwitch);
+    ctx.moveTo(14, -4);
+    ctx.lineTo(23, -4);
+    ctx.moveTo(14, -3);
+    ctx.lineTo(21, -1 - catWhiskerTwitch);
+    ctx.stroke();
+
+    // --- Cat Paws Holding a Small Golden Fish or Bell ---
+    if (isPouncing) {
+      // Reaching claws in pounce motion!
+      ctx.fillStyle = mainCoat;
+      ctx.beginPath();
+      ctx.ellipse(14, 0, 3.5, 3.5, 0.3, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    ctx.restore(); // End body transform
+
+    // --- Accessories on Cat ---
+    if (bunny.accessory === 'flower') {
+      ctx.fillStyle = '#ec4899';
+      for (let p = 0; p < 5; p++) {
+        const pa = (p * Math.PI * 2) / 5;
+        ctx.beginPath();
+        ctx.arc(8 + Math.cos(pa) * 3.5, -15 + Math.sin(pa) * 3.5, 2.2, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.fillStyle = '#fde047';
+      ctx.beginPath();
+      ctx.arc(8, -15, 1.8, 0, Math.PI * 2);
+      ctx.fill();
+    } else if (bunny.accessory === 'straw_hat') {
+      ctx.fillStyle = '#ca8a04';
+      ctx.beginPath();
+      ctx.ellipse(7, -15, 12, 3.2, 0.1, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#eab308';
+      ctx.beginPath();
+      ctx.arc(7, -18, 6, Math.PI, 0);
+      ctx.fill();
+      ctx.fillStyle = '#dc2626';
+      ctx.fillRect(2, -16, 10, 1.8);
+    } else if (bunny.accessory === 'red_ribbon') {
+      // Elegant red collar with gold bell for cat!
+      ctx.fillStyle = '#ef4444';
+      ctx.beginPath();
+      ctx.ellipse(6, 1, 5, 2.5, 0.1, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#facc15'; // Golden Bell
+      ctx.beginPath();
+      ctx.arc(9, 2, 2.5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#78350f';
+      ctx.beginPath();
+      ctx.arc(9, 2.5, 0.8, 0, Math.PI * 2);
+      ctx.fill();
+    } else if (bunny.accessory === 'crown') {
+      ctx.fillStyle = '#f59e0b';
+      ctx.beginPath();
+      ctx.moveTo(3, -15);
+      ctx.lineTo(4, -21);
+      ctx.lineTo(7, -17);
+      ctx.lineTo(10, -22);
+      ctx.lineTo(13, -17);
+      ctx.lineTo(16, -21);
+      ctx.lineTo(17, -15);
+      ctx.closePath();
+      ctx.fill();
+      ctx.fillStyle = '#ef4444';
+      ctx.beginPath();
+      ctx.arc(10, -19, 1.5, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  };
+
   // Draw Bunny with dynamic upgrade auras, shield bubble & accessories
   const drawBunny = (ctx: CanvasRenderingContext2D, bunny: BunnyEntity, currentUpgrades: BunnyUpgrades | undefined, time: number) => {
+    if (bunny.characterType === 'cat') {
+      drawCat(ctx, bunny, currentUpgrades, time);
+      return;
+    }
     if (bunny.characterType === 'squirrel') {
       drawSquirrel(ctx, bunny, currentUpgrades, time);
       return;

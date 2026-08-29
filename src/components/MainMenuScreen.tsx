@@ -28,6 +28,15 @@ export const MainMenuScreen: React.FC<MainMenuScreenProps> = ({
   onOpenAchievements,
   onOpenHelp,
 }) => {
+  const charAvatar =
+    stats.characterType === 'cat' ? '🐱' : stats.characterType === 'squirrel' ? '🐿️' : '🐰';
+  const charName =
+    stats.characterType === 'cat'
+      ? 'Bé Mèo Rừng'
+      : stats.characterType === 'squirrel'
+      ? 'Sóc Nhí'
+      : 'Thỏ Con';
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/90 backdrop-blur-xl p-4 select-none">
       {/* Background Animated Forest Glow Rings */}
@@ -35,18 +44,26 @@ export const MainMenuScreen: React.FC<MainMenuScreenProps> = ({
       <div className="absolute w-[500px] h-[500px] bg-amber-500/10 rounded-full blur-3xl pointer-events-none animate-pulse -bottom-20 -right-20" />
 
       <div className="relative w-full max-w-lg bg-gradient-to-b from-slate-900/95 via-slate-900/95 to-slate-950/95 border-2 border-emerald-500/40 rounded-3xl shadow-[0_25px_70px_rgba(0,0,0,0.9),0_0_50px_rgba(16,185,129,0.25)] p-6 sm:p-8 flex flex-col items-center text-center overflow-hidden">
-        {/* Decorative Nature Leaf / Badge */}
-        <div className="w-24 h-24 rounded-3xl bg-gradient-to-br from-emerald-400 via-teal-500 to-emerald-600 flex items-center justify-center shadow-[0_10px_30px_rgba(16,185,129,0.4)] border-2 border-emerald-200/50 mb-3 animate-bounce">
-          <span className="text-5xl filter drop-shadow-md">🐰</span>
+        {/* Trio Character Badges */}
+        <div className="flex items-center justify-center gap-2 mb-3">
+          <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-2xl bg-gradient-to-br from-pink-500 to-rose-400 flex items-center justify-center shadow-lg border border-white/20 transform -rotate-6 hover:rotate-0 transition-transform">
+            <span className="text-3xl">🐰</span>
+          </div>
+          <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-3xl bg-gradient-to-br from-emerald-400 via-teal-500 to-emerald-600 flex items-center justify-center shadow-[0_10px_30px_rgba(16,185,129,0.4)] border-2 border-emerald-200/60 z-10 animate-bounce">
+            <span className="text-4xl filter drop-shadow-md">{charAvatar}</span>
+          </div>
+          <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-2xl bg-gradient-to-br from-orange-500 to-amber-400 flex items-center justify-center shadow-lg border border-white/20 transform rotate-6 hover:rotate-0 transition-transform">
+            <span className="text-3xl">🐱</span>
+          </div>
         </div>
 
         {/* Title */}
-        <h1 className="text-3xl sm:text-4xl font-black text-white tracking-tight flex items-center gap-2">
-          <span>THỎ TRONG RỪNG</span>
-          <Sparkles className="w-6 h-6 text-amber-400 fill-current animate-pulse" />
+        <h1 className="text-2xl sm:text-3xl font-black text-white tracking-tight flex items-center justify-center gap-2">
+          <span>THÁM HIỂM RỪNG XANH</span>
+          <Sparkles className="w-5 h-5 text-amber-400 fill-current animate-pulse" />
         </h1>
         <p className="text-xs sm:text-sm text-emerald-300 font-semibold mt-1">
-          Phiêu Lưu Thám Hiểm Thế Giới Rừng Xanh Diệu Kỳ
+          Đồng Hành Cùng Thỏ Con 🐰, Sóc Nhí 🐿️ & Bé Mèo 🐱
         </p>
 
         {/* Saved Game Status Card if available */}
@@ -54,11 +71,11 @@ export const MainMenuScreen: React.FC<MainMenuScreenProps> = ({
           <div className="w-full mt-5 p-3.5 rounded-2xl bg-emerald-950/40 border border-emerald-500/40 flex items-center justify-between text-left">
             <div className="flex items-center gap-2.5">
               <div className="w-10 h-10 rounded-xl bg-emerald-500/20 flex items-center justify-center text-xl border border-emerald-400/30">
-                ⭐
+                {charAvatar}
               </div>
               <div>
                 <div className="text-xs font-black text-emerald-200">
-                  Cấp Độ Thỏ: <span className="text-amber-300">Cấp {stats.playerLevel || 1}</span>
+                  Nhân Vật: <span className="text-amber-300">{charName} (Cấp {stats.playerLevel || 1})</span>
                 </div>
                 <div className="text-[11px] text-slate-300 flex items-center gap-2 mt-0.5 font-medium">
                   <span>🥕 {stats.carrots}</span>

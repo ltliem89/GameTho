@@ -34,14 +34,46 @@ export const HelpModal: React.FC<HelpModalProps> = ({ isOpen, onClose }) => {
           </button>
         </div>
 
-        {/* Affirmation Box */}
-        <div className="mt-4 p-4 rounded-2xl bg-gradient-to-r from-emerald-500/25 via-teal-500/20 to-emerald-500/25 border-2 border-emerald-400/40 shadow-lg">
-          <div className="flex items-center gap-2 text-emerald-300 font-black text-base">
-            <span>✨</span> Hoàn toàn được nhé!
+        {/* Trio Characters Guide */}
+        <div className="mt-5 space-y-2.5">
+          <h3 className="text-xs font-black uppercase tracking-wider text-amber-400 flex items-center gap-1.5">
+            <span>🐾</span> Lựa Chọn Nhân Vật Đi Rừng & Kỹ Năng:
+          </h3>
+
+          <div className="space-y-2 text-xs">
+            {/* Bunny */}
+            <div className="p-3 rounded-2xl bg-pink-950/40 border border-pink-500/30">
+              <div className="font-black text-pink-300 flex items-center gap-1.5 text-sm">
+                <span>🐰</span> Thỏ Bông Tuyết (Bật Nhảy & Lướt Nhanh)
+              </div>
+              <p className="text-slate-200 mt-1 leading-relaxed text-[11px]">
+                • <strong>Kỹ năng:</strong> Nhảy cao bổng qua suối đá, lướt êm ái trên đồng cỏ hoa thơm.<br />
+                • <strong>Nội tại:</strong> Tốc độ ăn cà rốt nhanh, nhặt cà rốt tăng gấp đôi tốc độ di chuyển trong chốc lát.
+              </p>
+            </div>
+
+            {/* Squirrel */}
+            <div className="p-3 rounded-2xl bg-amber-950/40 border border-amber-500/30">
+              <div className="font-black text-amber-300 flex items-center gap-1.5 text-sm">
+                <span>🐿️</span> Sóc Nhí Leo Cây (Trèo Thân Cổ Thụ & Chuyền Dây)
+              </div>
+              <p className="text-slate-200 mt-1 leading-relaxed text-[11px]">
+                • <strong>Kỹ năng:</strong> Tiếp cận thân cây cổ thụ/dây leo để leo lên ngọn cao ngắm toàn cảnh rừng xanh.<br />
+                • <strong>Nội tại:</strong> Hái quả sồi và táo chín trên cây, mở khóa tầm nhìn rộng trên tán lá.
+              </p>
+            </div>
+
+            {/* Cat */}
+            <div className="p-3 rounded-2xl bg-orange-950/40 border border-orange-500/30">
+              <div className="font-black text-orange-300 flex items-center gap-1.5 text-sm">
+                <span>🐱</span> Bé Mèo Nhanh Nhẹn (Cú Vồ Pounce & Bước Chân Êm)
+              </div>
+              <p className="text-slate-200 mt-1 leading-relaxed text-[11px]">
+                • <strong>Kỹ năng:</strong> Nhấn Space hoặc nút Kỹ năng để Phi Thân Vồ Mồi (Pounce Dash) vượt suối và bắt bướm bay.<br />
+                • <strong>Nội tại:</strong> Tiếng kêu Meow & rừ rừ làm muôn thú thân thiện, bắt bướm/cá nhận x2 điểm kinh nghiệm.
+              </p>
+            </div>
           </div>
-          <p className="text-xs text-slate-100 mt-1 leading-relaxed font-medium">
-            Bạn có thể tự do dẫn chú thỏ đi dạo tới lui khắp khu rừng rộng lớn, qua suối, thăm vườn cà rốt thơm ngon và khám phá những điều kỳ thú!
-          </p>
         </div>
 
         {/* Controls Guide */}

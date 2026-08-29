@@ -216,7 +216,7 @@ export const TouchControls: React.FC<TouchControlsProps> = ({
         </div>
       </div>
 
-      {/* Right side: Action Jump Button */}
+      {/* Right side: Action Skill / Jump Button */}
       <div className="pointer-events-auto flex items-center gap-2 sm:gap-3">
         <button
           id="btn-jump-action"
@@ -225,11 +225,27 @@ export const TouchControls: React.FC<TouchControlsProps> = ({
             e.stopPropagation();
             onJump();
           }}
-          className="w-16 h-16 sm:w-22 sm:h-22 rounded-full bg-gradient-to-tr from-amber-500 via-yellow-400 to-amber-300 text-amber-950 font-black flex flex-col items-center justify-center shadow-[0_6px_20px_rgba(245,158,11,0.45)] sm:shadow-[0_8px_30px_rgba(245,158,11,0.5)] active:scale-90 transition-transform border-2 sm:border-3 border-amber-100 hover:shadow-[0_8px_35px_rgba(245,158,11,0.7)] select-none touch-none"
-          aria-label="Nhảy lò cò"
+          className={`w-16 h-16 sm:w-22 sm:h-22 rounded-full font-black flex flex-col items-center justify-center active:scale-90 transition-all border-2 sm:border-3 select-none touch-none ${
+            characterType === 'cat'
+              ? 'bg-gradient-to-tr from-orange-500 via-amber-400 to-rose-400 text-slate-950 border-orange-200 shadow-[0_6px_20px_rgba(249,115,22,0.5)]'
+              : characterType === 'squirrel'
+              ? 'bg-gradient-to-tr from-amber-600 via-amber-400 to-yellow-300 text-amber-950 border-yellow-100 shadow-[0_6px_20px_rgba(245,158,11,0.5)]'
+              : 'bg-gradient-to-tr from-pink-500 via-rose-400 to-amber-300 text-slate-950 border-pink-100 shadow-[0_6px_20px_rgba(244,63,94,0.5)]'
+          }`}
+          aria-label={
+            characterType === 'cat'
+              ? 'Vồ mồi siêu tốc (Pounce)'
+              : characterType === 'squirrel'
+              ? 'Trèo cây / Lướt cành'
+              : 'Nhảy lò cò (Super Hop)'
+          }
         >
-          <Sparkles className="w-6 h-6 sm:w-7 sm:h-7 animate-pulse text-amber-900" />
-          <span className="hidden sm:inline text-xs tracking-widest uppercase font-black mt-0.5">Nhảy</span>
+          <span className="text-xl sm:text-2xl animate-pulse">
+            {characterType === 'cat' ? '🐾' : characterType === 'squirrel' ? '🐿️' : '✨'}
+          </span>
+          <span className="text-[10px] sm:text-xs tracking-wider uppercase font-black mt-0.5 truncate px-1">
+            {characterType === 'cat' ? 'Vồ Mồi' : characterType === 'squirrel' ? 'Trèo Lướt' : 'Bật Nhảy'}
+          </span>
         </button>
       </div>
     </div>
