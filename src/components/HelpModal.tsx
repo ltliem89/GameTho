@@ -92,6 +92,7 @@ export const HelpModal: React.FC<HelpModalProps> = ({ isOpen, onClose }) => {
             <li>Đi qua chiếc <span className="text-sky-300 font-black">Cầu Gỗ</span> bắc qua dòng suối róc rách.</li>
             <li>Gặp gỡ và nói chuyện với các bạn động vật rừng: Sóc Nhí, Bé Nhím, Vịt Cốm, Hươu Sao.</li>
             <li>Mở <span className="text-purple-300 font-black">Tủ Đồ</span> để thử nhiều bộ lông và nón cói, nơ đỏ đáng yêu!</li>
+            <li>Bật chế độ thời tiết <span className="text-sky-300 font-black">Trời Mưa (Rain)</span> để ngắm mưa rơi lất phất kèm tiếng mưa rào êm dịu và vòng sóng nước!</li>
             <li>Đổi thời tiết sang <span className="text-indigo-300 font-black">Ban Đêm</span> để chiêm ngưỡng nấm phát sáng và đàn đom đóm lung linh!</li>
           </ul>
         </div>

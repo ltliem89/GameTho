@@ -3,7 +3,7 @@ export type Direction = 'left' | 'right' | 'up' | 'down';
 export type BunnySkin = 'white' | 'caramel' | 'spotted' | 'pink' | 'shadow' | 'golden' | 'galaxy';
 export type BunnyAccessory = 'none' | 'flower' | 'straw_hat' | 'red_ribbon' | 'carrot_pack' | 'glasses' | 'crown' | 'fairy_wings' | 'witch_hat' | 'rainbow_wreath';
 
-export type WeatherType = 'sunny' | 'afternoon' | 'night' | 'rainy';
+export type WeatherType = 'sunny' | 'afternoon' | 'night' | 'rainy' | 'rain';
 
 export interface Position {
   x: number;
@@ -119,7 +119,8 @@ export interface ForestAnimal {
     | 'owl'
     | 'panda'
     | 'turtle'
-    | 'fairy_butterfly';
+    | 'fairy_butterfly'
+    | 'crocodile';
   name: string;
   nameVi: string;
   x: number;
@@ -175,7 +176,7 @@ export interface Quest {
   titleVi: string;
   descVi: string;
   icon: string;
-  category: 'carrot' | 'animal' | 'explore' | 'secret';
+  category: 'carrot' | 'animal' | 'explore' | 'secret' | 'nature';
   targetCount: number;
   currentCount: number;
   completed: boolean;
@@ -185,6 +186,27 @@ export interface Quest {
   rewardSkin?: BunnySkin;
   rewardAccessory?: BunnyAccessory;
   targetId?: string;
+}
+
+export interface EnvironmentalRescue {
+  id: string;
+  type: 'hedgehog_thorns' | 'stream_trash' | 'wildfire_ember' | 'fallen_nest' | 'withered_sprout';
+  titleVi: string;
+  victimNameVi: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  status: 'in_distress' | 'rescuing' | 'saved';
+  progress: number; // 0 to 100
+  rescueActionVi: string; // e.g. "Gỡ Bụi Gai", "Dọn Rác Thải", "Dập Tắt Lửa", "Cứu Tổ Chim", "Tưới Mát Cây"
+  icon: string;
+  dialogueBefore: string;
+  dialogueSaved: string;
+  rewardCarrots: number;
+  rewardXp: number;
+  rewardItemVi?: string;
+  ecoTipVi: string;
 }
 
 export interface InteractivePlant {
@@ -206,7 +228,7 @@ export interface Achievement {
   icon: string;
   unlocked: boolean;
   unlockedAt?: string;
-  category: 'explore' | 'collect' | 'nature' | 'social';
+  category: 'explore' | 'collect' | 'nature' | 'social' | 'secret';
   rewardCarrots: number;
   rewardXp: number;
 }
@@ -219,6 +241,8 @@ export interface DiscoveryStats {
   goldenCarrots: number;
   apples: number;
   witheredPlantsRevived: number;
+  rescuesCompleted: string[]; // ids of rescued environmental missions
+  ecoScore: number;
   xp: number;
   playerLevel: number;
   animalsTalked: string[];

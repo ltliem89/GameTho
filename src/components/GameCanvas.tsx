@@ -11,10 +11,12 @@ import {
   Particle,
   WeatherType,
   BunnyUpgrades,
+  EnvironmentalRescue,
 } from '../types';
 import {
   FOREST_BIOMES,
   generateInitialWorld,
+  getInitialRescues,
   checkBunnyCollision,
   getRiverCenterX,
   RIVER_HALF_WIDTH,
@@ -32,12 +34,46 @@ interface GameCanvasProps {
   bunnyAccessory: BunnyAccessory;
   speedMultiplier: number;
   upgrades?: BunnyUpgrades;
+  rescues?: EnvironmentalRescue[];
+  onRescueInteract?: (rescue: EnvironmentalRescue) => void;
   onStatsUpdate: (updater: (prev: DiscoveryStats) => DiscoveryStats) => void;
   onZoneChange: (zoneNameVi: string) => void;
   onAnimalInteract: (animal: ForestAnimal) => void;
   joystickVector: { x: number; y: number } | null;
   onJumpTriggered: () => void;
   jumpSignal: number;
+}
+
+export interface RiverFish {
+  id: string;
+  y: number;
+  speed: number;
+  dirY: number; // 1 = down, -1 = up
+  offsetX: number; // -45 to 45
+  size: number; // 10 to 18
+  colorType: 'koi_gold' | 'trout_silver' | 'minnow_cyan' | 'koi_calico';
+  swimPhase: number;
+  wiggleSpeed: number;
+  jumpTimer: number;
+  isJumping: boolean;
+  jumpProgress: number;
+  jumpArcHeight: number;
+}
+
+export interface SparseGrassClump {
+  x: number;
+  y: number;
+  blades: Array<{
+    dx: number;
+    h: number;
+    bend: number;
+    shade: string;
+  }>;
+  flower?: {
+    type: 'daisy' | 'lavender' | 'pink_petal' | 'clover_sprout';
+    color: string;
+    centerColor?: string;
+  };
 }
 
 const DEFAULT_UPGRADES: BunnyUpgrades = {
@@ -55,6 +91,8 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
   bunnyAccessory,
   speedMultiplier,
   upgrades = DEFAULT_UPGRADES,
+  rescues,
+  onRescueInteract,
   onStatsUpdate,
   onZoneChange,
   onAnimalInteract,
@@ -88,10 +126,16 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
   const decorsRef = useRef<ForestDecor[]>([]);
   const collectiblesRef = useRef<CollectibleItem[]>([]);
   const animalsRef = useRef<ForestAnimal[]>([]);
+  const rescuesRef = useRef<EnvironmentalRescue[]>(rescues || getInitialRescues());
   const particlesRef = useRef<Particle[]>([]);
   const footstepsRef = useRef<Footstep[]>([]);
   const butterFliesRef = useRef<Array<{ x: number; y: number; vx: number; vy: number; color: string; phase: number }>>([]);
   const firefliesRef = useRef<Array<{ x: number; y: number; vx: number; vy: number; glow: number }>>([]);
+  const riverFishRef = useRef<RiverFish[]>([]);
+  const sparseGrassRef = useRef<SparseGrassClump[]>([]);
+  const rainDropsRef = useRef<Array<{ x: number; y: number; length: number; speed: number; vx: number; vy: number; opacity: number; width: number; targetY: number }>>([]);
+  const rainRipplesRef = useRef<Array<{ x: number; y: number; radius: number; maxRadius: number; alpha: number; speed: number }>>([]);
+  const lightningFlashRef = useRef<{ alpha: number; nextFlashTimer: number }>({ alpha: 0, nextFlashTimer: 600 });
 
   const currentZoneRef = useRef<string>('Thảm Cỏ Nhà Thỏ');
   const animationFrameId = useRef<number>(0);
@@ -103,6 +147,13 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
     bunnyRef.current.skin = bunnySkin;
     bunnyRef.current.accessory = bunnyAccessory;
   }, [bunnySkin, bunnyAccessory]);
+
+  // Sync Rescues from props
+  useEffect(() => {
+    if (rescues && rescues.length > 0) {
+      rescuesRef.current = rescues;
+    }
+  }, [rescues]);
 
   // Jump action
   const doJump = useCallback(() => {
@@ -171,6 +222,78 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
       });
     }
     firefliesRef.current = fFlies;
+
+    // River Swimming Fish (Cá lội mương / suối)
+    const fishColors: Array<'koi_gold' | 'trout_silver' | 'minnow_cyan' | 'koi_calico'> = [
+      'koi_gold',
+      'koi_calico',
+      'trout_silver',
+      'minnow_cyan',
+      'koi_gold',
+      'trout_silver',
+    ];
+    const fishes: RiverFish[] = [];
+    for (let i = 0; i < 24; i++) {
+      const startY = 120 + (i * (WORLD_HEIGHT - 240)) / 24 + (Math.random() * 60 - 30);
+      fishes.push({
+        id: `river_fish_${i}`,
+        y: startY,
+        speed: 0.6 + Math.random() * 0.7,
+        dirY: Math.random() < 0.5 ? 1 : -1,
+        offsetX: (Math.random() - 0.5) * (RIVER_HALF_WIDTH * 1.2),
+        size: 11 + Math.random() * 6,
+        colorType: fishColors[i % fishColors.length],
+        swimPhase: Math.random() * Math.PI * 2,
+        wiggleSpeed: 0.08 + Math.random() * 0.05,
+        jumpTimer: 180 + Math.floor(Math.random() * 600),
+        isJumping: false,
+        jumpProgress: 0,
+        jumpArcHeight: 14 + Math.random() * 10,
+      });
+    }
+    riverFishRef.current = fishes;
+
+    // Sparse Grass Clusters Across Ground (Cỏ lưa thưa dưới chân)
+    const grassClumps: SparseGrassClump[] = [];
+    const grassShades = ['#15803d', '#16a34a', '#22c55e', '#4ade80', '#84cc16', '#65a30d'];
+    for (let i = 0; i < 360; i++) {
+      const gx = 100 + Math.random() * (WORLD_WIDTH - 200);
+      const gy = 100 + Math.random() * (WORLD_HEIGHT - 200);
+
+      // Skip inside deep river stream
+      if (isPointInRiver(gx, gy)) continue;
+
+      const bladeCount = 3 + Math.floor(Math.random() * 3);
+      const blades = [];
+      for (let b = 0; b < bladeCount; b++) {
+        blades.push({
+          dx: (b - bladeCount / 2) * 3.5 + (Math.random() * 2 - 1),
+          h: 8 + Math.random() * 10,
+          bend: (Math.random() - 0.5) * 6,
+          shade: grassShades[Math.floor(Math.random() * grassShades.length)],
+        });
+      }
+
+      let flower: SparseGrassClump['flower'] = undefined;
+      const flowerRoll = Math.random();
+      if (flowerRoll < 0.12) {
+        flower = { type: 'daisy', color: '#ffffff', centerColor: '#facc15' };
+      } else if (flowerRoll < 0.2) {
+        flower = { type: 'lavender', color: '#c084fc', centerColor: '#e9d5ff' };
+      } else if (flowerRoll < 0.28) {
+        flower = { type: 'pink_petal', color: '#f472b6', centerColor: '#fde047' };
+      } else if (flowerRoll < 0.36) {
+        flower = { type: 'clover_sprout', color: '#22c55e' };
+      }
+
+      grassClumps.push({
+        x: gx,
+        y: gy,
+        blades,
+        flower,
+      });
+    }
+    sparseGrassRef.current = grassClumps;
   }, []);
 
   // Keyboard Event Listeners
@@ -236,6 +359,16 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
 
     const worldTargetX = clickScreenX + cameraX;
     const worldTargetY = clickScreenY + cameraY;
+
+    // Check if clicked near an Environmental Rescue
+    for (const rescue of rescuesRef.current) {
+      const dist = Math.hypot(rescue.x - worldTargetX, rescue.y - worldTargetY);
+      if (dist < 55) {
+        onRescueInteract?.(rescue);
+        sounds.playChirp();
+        return;
+      }
+    }
 
     clickTarget.current = {
       x: worldTargetX,
@@ -616,8 +749,8 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
         // Collection Contact Check
         if (dist < 36) {
           item.collected = true;
-          // Set respawn timer: 15-25 seconds
-          item.maxRespawnTimer = 900 + Math.random() * 600;
+          // Set respawn timer: slowed down by 2x (30-50 seconds instead of 15-25s)
+          item.maxRespawnTimer = 1800 + Math.random() * 1200;
           item.respawnTimer = item.maxRespawnTimer;
           item.regrowProgress = 0;
 
@@ -711,26 +844,133 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
         }
       }
 
-      // Weather Particles (Rain / Fireflies)
-      if (weather === 'rainy') {
-        rainSpawnTimer++;
-        if (rainSpawnTimer % 2 === 0) {
-          const camX = Math.max(0, Math.min(WORLD_WIDTH - canvas.width, bunny.x - canvas.width / 2));
-          const camY = Math.max(0, Math.min(WORLD_HEIGHT - canvas.height, bunny.y - canvas.height / 2));
-          for (let r = 0; r < 5; r++) {
+      // Environmental Rescues Loop & Dynamic Particles
+      for (const rescue of rescuesRef.current) {
+        if (rescue.status === 'in_distress') {
+          // Wildfire ember emits smoke puffs
+          if (rescue.type === 'wildfire_ember' && Math.random() < 0.35) {
             particlesRef.current.push({
-              x: camX + Math.random() * canvas.width,
-              y: camY - 10,
-              vx: -1.5,
-              vy: 9 + Math.random() * 4,
-              size: 1.5,
-              color: '#bae6fd',
-              alpha: 0.6,
+              x: rescue.x + (Math.random() * 24 - 12),
+              y: rescue.y + 4,
+              vx: (Math.random() - 0.5) * 0.7,
+              vy: -Math.random() * 1.5 - 0.6,
+              size: Math.random() * 3 + 2,
+              color: Math.random() < 0.4 ? '#f97316' : '#64748b',
+              alpha: 0.8,
               life: 0,
-              maxLife: 45,
-              type: 'rain',
+              maxLife: 26,
+              type: 'dust',
             });
           }
+
+          // Check if Bunny walked very close & jumped to trigger rescue
+          const distToBunny = Math.hypot(rescue.x - bunny.x, rescue.y - bunny.y);
+          if (distToBunny < 48 && (bunny.isJumping || Math.hypot(bunny.vx, bunny.vy) < 0.5)) {
+            // Can be activated via interaction or click
+          }
+        }
+      }
+
+      // Real-Time Weather System (Rain Particles, Puddle Splashes & Atmosphere)
+      const isRaining = weather === 'rainy' || weather === 'rain';
+      const camX = Math.max(0, Math.min(WORLD_WIDTH - canvas.width, bunny.x - canvas.width / 2));
+      const camY = Math.max(0, Math.min(WORLD_HEIGHT - canvas.height, bunny.y - canvas.height / 2));
+
+      if (isRaining) {
+        // Maintain continuous falling raindrops across camera view
+        const targetRainCount = 240;
+        while (rainDropsRef.current.length < targetRainCount) {
+          const dropX = camX - 60 + Math.random() * (canvas.width + 120);
+          const dropY = camY - 80 + Math.random() * (canvas.height + 80);
+          const speed = 18 + Math.random() * 9;
+          rainDropsRef.current.push({
+            x: dropX,
+            y: dropY,
+            length: 16 + Math.random() * 14,
+            speed,
+            vx: -2.2 - Math.random() * 1.2,
+            vy: speed,
+            opacity: 0.35 + Math.random() * 0.45,
+            width: Math.random() < 0.25 ? 1.6 : 1.1,
+            targetY: dropY + 80 + Math.random() * (canvas.height - 80),
+          });
+        }
+
+        // Update falling raindrops
+        for (let i = rainDropsRef.current.length - 1; i >= 0; i--) {
+          const drop = rainDropsRef.current[i];
+          drop.x += drop.vx;
+          drop.y += drop.vy;
+
+          // Check if drop hit the ground or left screen
+          if (drop.y >= drop.targetY || drop.y > camY + canvas.height + 15 || drop.x < camX - 80) {
+            // Spawn water ripple on the terrain
+            if (drop.y <= camY + canvas.height + 5) {
+              rainRipplesRef.current.push({
+                x: drop.x,
+                y: Math.min(drop.y, camY + canvas.height - 2),
+                radius: 1,
+                maxRadius: 4 + Math.random() * 5,
+                alpha: 0.55,
+                speed: 0.4,
+              });
+
+              // 30% chance for a tiny splash droplet bounce
+              if (Math.random() < 0.3) {
+                particlesRef.current.push({
+                  x: drop.x,
+                  y: drop.y,
+                  vx: (Math.random() - 0.5) * 1.8,
+                  vy: -1.2 - Math.random() * 1.8,
+                  size: 1.2,
+                  color: '#bae6fd',
+                  alpha: 0.65,
+                  life: 0,
+                  maxLife: 12,
+                  type: 'leaf',
+                });
+              }
+            }
+
+            // Recycle drop to top of camera
+            drop.x = camX - 40 + Math.random() * (canvas.width + 100);
+            drop.y = camY - 30 - Math.random() * 50;
+            drop.speed = 18 + Math.random() * 9;
+            drop.vy = drop.speed;
+            drop.vx = -2.2 - Math.random() * 1.2;
+            drop.targetY = drop.y + 100 + Math.random() * canvas.height;
+          }
+        }
+
+        // Ambient sheet lightning flash timer
+        lightningFlashRef.current.nextFlashTimer--;
+        if (lightningFlashRef.current.nextFlashTimer <= 0) {
+          lightningFlashRef.current.alpha = 0.25;
+          lightningFlashRef.current.nextFlashTimer = 650 + Math.floor(Math.random() * 850);
+        }
+        if (lightningFlashRef.current.alpha > 0) {
+          lightningFlashRef.current.alpha = Math.max(0, lightningFlashRef.current.alpha - 0.012);
+        }
+      } else {
+        // Clear falling raindrops smoothly when rain is off
+        for (let i = rainDropsRef.current.length - 1; i >= 0; i--) {
+          const drop = rainDropsRef.current[i];
+          drop.x += drop.vx;
+          drop.y += drop.vy;
+          drop.opacity -= 0.05;
+          if (drop.opacity <= 0) {
+            rainDropsRef.current.splice(i, 1);
+          }
+        }
+      }
+
+      // Update rain ground ripples
+      for (let i = rainRipplesRef.current.length - 1; i >= 0; i--) {
+        const rip = rainRipplesRef.current[i];
+        rip.radius += rip.speed;
+        rip.alpha = 0.55 * (1 - rip.radius / rip.maxRadius);
+        if (rip.radius >= rip.maxRadius || rip.alpha <= 0) {
+          rainRipplesRef.current.splice(i, 1);
         }
       }
 
@@ -741,21 +981,6 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
         p.y += p.vy;
         p.life++;
         p.alpha = 1 - p.life / p.maxLife;
-
-        if (p.type === 'rain' && p.life >= p.maxLife) {
-          particlesRef.current.push({
-            x: p.x,
-            y: p.y,
-            vx: 0,
-            vy: 0,
-            size: 2,
-            color: '#e0f2fe',
-            alpha: 0.5,
-            life: 0,
-            maxLife: 10,
-            type: 'ripple',
-          });
-        }
 
         if (p.life >= p.maxLife) {
           particlesRef.current.splice(i, 1);
@@ -789,6 +1014,104 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
         if (ff.y < 50 || ff.y > WORLD_HEIGHT - 50) ff.vy *= -1;
       }
 
+      // Update River Swimming Fish (Cá lội mương / suối)
+      for (const fish of riverFishRef.current) {
+        fish.swimPhase += fish.wiggleSpeed;
+
+        if (!fish.isJumping) {
+          // Normal swimming along the river stream current
+          fish.y += fish.speed * fish.dirY;
+
+          // Reverse direction at top and bottom bounds of river
+          if (fish.y < 90) {
+            fish.y = 90;
+            fish.dirY = 1;
+          } else if (fish.y > WORLD_HEIGHT - 90) {
+            fish.y = WORLD_HEIGHT - 90;
+            fish.dirY = -1;
+          }
+
+          // Periodic jumping / leaping animation
+          fish.jumpTimer--;
+          if (fish.jumpTimer <= 0) {
+            fish.isJumping = true;
+            fish.jumpProgress = 0;
+            fish.jumpArcHeight = 12 + Math.random() * 14;
+
+            // Water ripple ring at start of leap
+            const fx = getRiverCenterX(fish.y) + fish.offsetX;
+            particlesRef.current.push({
+              x: fx,
+              y: fish.y,
+              vx: 0,
+              vy: 0,
+              size: 5,
+              color: '#ffffff',
+              alpha: 0.75,
+              life: 0,
+              maxLife: 22,
+              type: 'ripple',
+            });
+          }
+        } else {
+          // In-air leap arc
+          fish.jumpProgress += 0.035;
+          fish.y += fish.speed * fish.dirY * 0.4;
+
+          if (fish.jumpProgress >= 1) {
+            fish.isJumping = false;
+            fish.jumpProgress = 0;
+            fish.jumpTimer = 280 + Math.floor(Math.random() * 650);
+
+            // Water splash droplets & ripple on landing back into stream
+            const fx = getRiverCenterX(fish.y) + fish.offsetX;
+            sounds.playWaterDrop();
+            for (let sp = 0; sp < 4; sp++) {
+              particlesRef.current.push({
+                x: fx + (Math.random() * 8 - 4),
+                y: fish.y + (Math.random() * 4 - 2),
+                vx: (Math.random() - 0.5) * 1.8,
+                vy: -Math.random() * 2 - 1,
+                size: 2.5,
+                color: '#e0f2fe',
+                alpha: 0.9,
+                life: 0,
+                maxLife: 20,
+                type: 'dust',
+              });
+            }
+            particlesRef.current.push({
+              x: fx,
+              y: fish.y,
+              vx: 0,
+              vy: 0,
+              size: 6,
+              color: '#ffffff',
+              alpha: 0.8,
+              life: 0,
+              maxLife: 26,
+              type: 'ripple',
+            });
+          }
+        }
+      }
+
+      // Bunny hopping grass particle effect (Cỏ lưa thưa vương dưới chân thỏ)
+      if (bunny.isMoving && !isPointInRiver(bunny.x, bunny.y) && Math.random() < 0.22) {
+        particlesRef.current.push({
+          x: bunny.x + (Math.random() * 14 - 7),
+          y: bunny.y + 10,
+          vx: (Math.random() - 0.5) * 1.2,
+          vy: -Math.random() * 1.4,
+          size: 2.5,
+          color: Math.random() < 0.5 ? '#86efac' : '#4ade80',
+          alpha: 0.8,
+          life: 0,
+          maxLife: 22,
+          type: 'leaf',
+        });
+      }
+
       // --- RENDERING PASS ---
       const cameraX = Math.max(0, Math.min(WORLD_WIDTH - canvas.width, bunny.x - canvas.width / 2));
       const cameraY = Math.max(0, Math.min(WORLD_HEIGHT - canvas.height, bunny.y - canvas.height / 2));
@@ -797,10 +1120,10 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       ctx.translate(-cameraX, -cameraY);
 
-      // 1. Forest Ground & Paths
-      drawForestBackground(ctx, weather);
+      // 1. Forest Ground & Paths (with Sparse Grass Tufts & Wild Florets)
+      drawForestBackground(ctx, weather, bunny, currentTime);
 
-      // 2. River Stream (Animated with ripples)
+      // 2. River Stream (Animated with swimming fish, jumping trout/koi, ripples & riverbanks)
       drawRiverStream(ctx, currentTime, weather);
 
       // 3. Wooden Bridges
@@ -819,6 +1142,9 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
 
       // 7. Background Decors (Burrows, flowers, ponds)
       drawBackgroundDecors(ctx);
+
+      // 7.5 Environmental Rescue Missions (Thorn trapped hedgehog, stream trash, wildfire ember, fallen nest)
+      drawRescues(ctx, currentTime);
 
       // 8. Animals
       drawForestAnimals(ctx);
@@ -853,7 +1179,12 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
 
   // --- DRAWING FUNCTIONS ---
 
-  const drawForestBackground = (ctx: CanvasRenderingContext2D, currentW: WeatherType) => {
+  const drawForestBackground = (
+    ctx: CanvasRenderingContext2D,
+    currentW: WeatherType,
+    bunny: BunnyEntity,
+    time: number
+  ) => {
     let topColor = '#4ade80';
     let bottomColor = '#22c55e';
     if (currentW === 'night') {
@@ -862,7 +1193,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
     } else if (currentW === 'afternoon') {
       topColor = '#84cc16';
       bottomColor = '#4d7c0f';
-    } else if (currentW === 'rainy') {
+    } else if (currentW === 'rainy' || currentW === 'rain') {
       topColor = '#3f6212';
       bottomColor = '#283618';
     }
@@ -889,17 +1220,118 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
     ctx.stroke();
     ctx.restore();
 
-    // Grass Tuft Accents
-    ctx.fillStyle = currentW === 'night' ? '#14532d' : '#86efac44';
-    for (let gx = 120; gx < WORLD_WIDTH; gx += 180) {
-      for (let gy = 120; gy < WORLD_HEIGHT; gy += 180) {
-        ctx.fillRect(gx + Math.sin(gy) * 20, gy, 4, 10);
-        ctx.fillRect(gx + 6 + Math.sin(gy) * 20, gy + 2, 4, 8);
+    // 1. Sparse Natural Grass Clusters (Cỏ lưa thưa rải rác khắp mặt đất)
+    ctx.save();
+    ctx.lineCap = 'round';
+
+    for (const clump of sparseGrassRef.current) {
+      const gx = clump.x;
+      const gy = clump.y;
+
+      // Draw each curved grass blade in the clump
+      for (const blade of clump.blades) {
+        ctx.strokeStyle = currentW === 'night' ? '#14532d' : blade.shade;
+        ctx.lineWidth = 1.8;
+        ctx.beginPath();
+        ctx.moveTo(gx + blade.dx, gy);
+        ctx.quadraticCurveTo(
+          gx + blade.dx + blade.bend * 0.5,
+          gy - blade.h * 0.6,
+          gx + blade.dx + blade.bend,
+          gy - blade.h
+        );
+        ctx.stroke();
+
+        // Tip highlight
+        ctx.strokeStyle = currentW === 'night' ? '#166534' : '#bef264';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(gx + blade.dx + blade.bend * 0.7, gy - blade.h * 0.75);
+        ctx.lineTo(gx + blade.dx + blade.bend, gy - blade.h);
+        ctx.stroke();
+      }
+
+      // Small Wild Florets & Clovers in sparse grass clumps
+      if (clump.flower) {
+        const fl = clump.flower;
+        if (fl.type === 'daisy') {
+          // Chamomile 5-petal white daisy
+          ctx.fillStyle = currentW === 'night' ? '#94a3b8' : '#ffffff';
+          for (let p = 0; p < 5; p++) {
+            const angle = (p * Math.PI * 2) / 5;
+            ctx.beginPath();
+            ctx.ellipse(gx + Math.cos(angle) * 3.5, gy - 6 + Math.sin(angle) * 3.5, 2.5, 1.4, angle, 0, Math.PI * 2);
+            ctx.fill();
+          }
+          ctx.fillStyle = '#facc15';
+          ctx.beginPath();
+          ctx.arc(gx, gy - 6, 2, 0, Math.PI * 2);
+          ctx.fill();
+        } else if (fl.type === 'lavender') {
+          // Lavender purple floret
+          ctx.fillStyle = currentW === 'night' ? '#6b21a8' : '#c084fc';
+          ctx.beginPath();
+          ctx.ellipse(gx, gy - 9, 2, 3, 0, 0, Math.PI * 2);
+          ctx.ellipse(gx, gy - 5, 2.5, 3, 0, 0, Math.PI * 2);
+          ctx.fill();
+        } else if (fl.type === 'pink_petal') {
+          // Pink blossom
+          ctx.fillStyle = currentW === 'night' ? '#9d174d' : '#f472b6';
+          for (let p = 0; p < 4; p++) {
+            const angle = (p * Math.PI * 2) / 4 + Math.PI / 4;
+            ctx.beginPath();
+            ctx.arc(gx + Math.cos(angle) * 3, gy - 7 + Math.sin(angle) * 3, 2, 0, Math.PI * 2);
+            ctx.fill();
+          }
+          ctx.fillStyle = '#fde047';
+          ctx.beginPath();
+          ctx.arc(gx, gy - 7, 1.5, 0, Math.PI * 2);
+          ctx.fill();
+        } else if (fl.type === 'clover_sprout') {
+          // 3-leaf clover sprout
+          ctx.fillStyle = currentW === 'night' ? '#14532d' : '#22c55e';
+          ctx.beginPath();
+          ctx.arc(gx - 2.5, gy - 4, 2, 0, Math.PI * 2);
+          ctx.arc(gx + 2.5, gy - 4, 2, 0, Math.PI * 2);
+          ctx.arc(gx, gy - 7, 2, 0, Math.PI * 2);
+          ctx.fill();
+        }
       }
     }
+
+    // 2. Dynamic Sparse Grass Under Bunny's Feet (Cỏ lưa thưa dưới chân thỏ nhún nhảy)
+    if (!isPointInRiver(bunny.x, bunny.y)) {
+      const swayOffset = bunny.isMoving ? Math.sin(time * 0.015) * 4 : 0;
+      const grassColor = currentW === 'night' ? '#166534' : '#4ade80';
+
+      ctx.strokeStyle = grassColor;
+      ctx.lineWidth = 1.6;
+
+      // 4 grass blades directly under / adjacent to bunny's paws
+      const underfootOffsets = [
+        { dx: -12, h: 9, bend: -3 + swayOffset },
+        { dx: -6, h: 12, bend: -1 + swayOffset * 0.8 },
+        { dx: 4, h: 11, bend: 2 - swayOffset * 0.8 },
+        { dx: 11, h: 8, bend: 4 - swayOffset },
+      ];
+
+      for (const b of underfootOffsets) {
+        ctx.beginPath();
+        ctx.moveTo(bunny.x + b.dx, bunny.y + 11);
+        ctx.quadraticCurveTo(
+          bunny.x + b.dx + b.bend * 0.5,
+          bunny.y + 11 - b.h * 0.6,
+          bunny.x + b.dx + b.bend,
+          bunny.y + 11 - b.h
+        );
+        ctx.stroke();
+      }
+    }
+
+    ctx.restore();
   };
 
-  // Render the River Stream (realistic sine curve with water foam, riverbanks, and flow currents)
+  // Render the River Stream with Swimming Fish (Cá lội mương), jumping trout/koi & river currents
   const drawRiverStream = (ctx: CanvasRenderingContext2D, time: number, currentW: WeatherType) => {
     ctx.save();
     const waterColor = currentW === 'night' ? '#1e3a8a' : '#38bdf8';
@@ -952,7 +1384,137 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
       ctx.fill();
     }
 
-    // 5. Riverbank Stones / Pebbles on West and East banks
+    // 5. River Swimming Fish & Leaping Fish (Cá lội mương / suối)
+    for (const fish of riverFishRef.current) {
+      const fx = getRiverCenterX(fish.y) + fish.offsetX + Math.sin(fish.swimPhase * 0.6) * 4;
+      const fy = fish.y;
+      const tailWiggle = Math.sin(fish.swimPhase * 1.6) * 0.45;
+      const isJumping = fish.isJumping;
+      const jumpYOffset = isJumping ? Math.sin(fish.jumpProgress * Math.PI) * fish.jumpArcHeight : 0;
+
+      ctx.save();
+      ctx.translate(fx, fy - jumpYOffset);
+
+      // Rotate fish along swimming direction (up or down along stream curve)
+      const streamSlope = (Math.cos(fish.y * 0.002) * 180 * 0.002);
+      const baseAngle = fish.dirY === 1 ? Math.PI / 2 + streamSlope : -Math.PI / 2 - streamSlope;
+      ctx.rotate(baseAngle + tailWiggle * 0.2);
+
+      // Swimming Water Wake Rings behind fish
+      if (!isJumping) {
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.35)';
+        ctx.lineWidth = 1.2;
+        ctx.beginPath();
+        ctx.ellipse(0, -fish.size * 0.8, fish.size * 0.35, fish.size * 0.15, 0, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+
+      // Caudal Tail Fin (Wiggling)
+      ctx.save();
+      ctx.translate(0, -fish.size * 0.65);
+      ctx.rotate(tailWiggle);
+
+      if (fish.colorType === 'koi_gold') {
+        ctx.fillStyle = '#f97316';
+      } else if (fish.colorType === 'koi_calico') {
+        ctx.fillStyle = '#ea580c';
+      } else if (fish.colorType === 'trout_silver') {
+        ctx.fillStyle = '#94a3b8';
+      } else {
+        ctx.fillStyle = '#06b6d4';
+      }
+
+      ctx.beginPath();
+      ctx.moveTo(0, 0);
+      ctx.lineTo(-fish.size * 0.4, -fish.size * 0.6);
+      ctx.quadraticCurveTo(0, -fish.size * 0.4, fish.size * 0.4, -fish.size * 0.6);
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+
+      // Pectoral Side Fins
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.65)';
+      ctx.beginPath();
+      ctx.ellipse(-fish.size * 0.45, 0, fish.size * 0.3, fish.size * 0.15, 0.6 + tailWiggle * 0.3, 0, Math.PI * 2);
+      ctx.ellipse(fish.size * 0.45, 0, fish.size * 0.3, fish.size * 0.15, -0.6 - tailWiggle * 0.3, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Main Hydrodynamic Fish Body
+      let bodyGrad = ctx.createLinearGradient(-fish.size * 0.3, 0, fish.size * 0.3, 0);
+      if (fish.colorType === 'koi_gold') {
+        bodyGrad.addColorStop(0, '#ea580c');
+        bodyGrad.addColorStop(0.5, '#f59e0b');
+        bodyGrad.addColorStop(1, '#ea580c');
+      } else if (fish.colorType === 'koi_calico') {
+        bodyGrad.addColorStop(0, '#f8fafc');
+        bodyGrad.addColorStop(0.5, '#ffffff');
+        bodyGrad.addColorStop(1, '#f8fafc');
+      } else if (fish.colorType === 'trout_silver') {
+        bodyGrad.addColorStop(0, '#64748b');
+        bodyGrad.addColorStop(0.5, '#cbd5e1');
+        bodyGrad.addColorStop(1, '#64748b');
+      } else {
+        bodyGrad.addColorStop(0, '#0284c7');
+        bodyGrad.addColorStop(0.5, '#38bdf8');
+        bodyGrad.addColorStop(1, '#0284c7');
+      }
+
+      ctx.fillStyle = bodyGrad;
+      ctx.beginPath();
+      ctx.ellipse(0, 0, fish.size * 0.38, fish.size * 0.75, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Fish Pattern Markings (Koi spots / Trout stripe)
+      if (fish.colorType === 'koi_gold' || fish.colorType === 'koi_calico') {
+        ctx.fillStyle = '#ef4444';
+        ctx.beginPath();
+        ctx.ellipse(0, fish.size * 0.2, fish.size * 0.18, fish.size * 0.3, 0, 0, Math.PI * 2);
+        ctx.fill();
+
+        if (fish.colorType === 'koi_calico') {
+          ctx.fillStyle = '#0f172a';
+          ctx.beginPath();
+          ctx.ellipse(fish.size * 0.15, -fish.size * 0.2, fish.size * 0.14, fish.size * 0.2, 0.3, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      } else if (fish.colorType === 'trout_silver') {
+        ctx.strokeStyle = '#06b6d4';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(0, -fish.size * 0.5);
+        ctx.lineTo(0, fish.size * 0.5);
+        ctx.stroke();
+
+        ctx.fillStyle = '#f43f5e';
+        ctx.beginPath();
+        ctx.arc(0, fish.size * 0.1, 1.5, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      // Fish Eyes (Left & Right)
+      ctx.fillStyle = '#0f172a';
+      ctx.beginPath();
+      ctx.arc(-fish.size * 0.22, fish.size * 0.45, 1.6, 0, Math.PI * 2);
+      ctx.arc(fish.size * 0.22, fish.size * 0.45, 1.6, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath();
+      ctx.arc(-fish.size * 0.24, fish.size * 0.43, 0.7, 0, Math.PI * 2);
+      ctx.arc(fish.size * 0.2, fish.size * 0.43, 0.7, 0, Math.PI * 2);
+      ctx.fill();
+
+      // In-air leap sparkle glint
+      if (isJumping) {
+        ctx.fillStyle = '#ffffff';
+        ctx.beginPath();
+        ctx.arc(0, 0, 3, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      ctx.restore();
+    }
+
+    // 6. Riverbank Stones / Pebbles on West and East banks
     for (let y = 80; y < WORLD_HEIGHT; y += 160) {
       const rx = getRiverCenterX(y);
       // Skip near bridges
@@ -1061,11 +1623,22 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
   const drawFootsteps = (ctx: CanvasRenderingContext2D) => {
     ctx.save();
     for (const fs of footstepsRef.current) {
+      // Paw imprint
       ctx.fillStyle = `rgba(120, 53, 15, ${fs.alpha * 0.35})`;
       ctx.beginPath();
       ctx.ellipse(fs.x - (fs.facing === 'left' ? 4 : -4), fs.y, 3.5, 2, 0, 0, Math.PI * 2);
       ctx.ellipse(fs.x + (fs.facing === 'left' ? 4 : -4), fs.y + 2, 3.5, 2, 0, 0, Math.PI * 2);
       ctx.fill();
+
+      // Sparse flattened grass blade impressions underfoot
+      ctx.strokeStyle = `rgba(22, 101, 52, ${fs.alpha * 0.45})`;
+      ctx.lineWidth = 1.2;
+      ctx.beginPath();
+      ctx.moveTo(fs.x - 5, fs.y + 2);
+      ctx.lineTo(fs.x - 7, fs.y - 2);
+      ctx.moveTo(fs.x + 5, fs.y + 2);
+      ctx.lineTo(fs.x + 7, fs.y - 1);
+      ctx.stroke();
     }
     ctx.restore();
   };
@@ -1453,6 +2026,117 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
         ctx.beginPath();
         ctx.arc(15, -4, 1.2, 0, Math.PI * 2);
         ctx.fill();
+      } else if (animal.type === 'crocodile') {
+        // Swamp & River Crocodile (Cá sấu đầm lầy / mương nước)
+        const tailSway = Math.sin(Date.now() * 0.003 + animal.x) * 0.3;
+
+        // Water ripple wake around crocodile if in or near water
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.ellipse(0, 2, 28, 14, 0, 0, Math.PI * 2);
+        ctx.stroke();
+
+        // Tail (Sinuous wavy scaly tail)
+        ctx.save();
+        ctx.translate(-14, 0);
+        ctx.rotate(tailSway);
+        ctx.fillStyle = '#166534';
+        ctx.beginPath();
+        ctx.moveTo(0, -6);
+        ctx.lineTo(-24, 0);
+        ctx.lineTo(0, 6);
+        ctx.closePath();
+        ctx.fill();
+
+        // Saw tooth scutes along tail (Gai đuôi)
+        ctx.fillStyle = '#14532d';
+        for (let t = -4; t > -22; t -= 5) {
+          ctx.beginPath();
+          ctx.moveTo(t, -2);
+          ctx.lineTo(t - 2, -6);
+          ctx.lineTo(t - 4, -2);
+          ctx.closePath();
+          ctx.fill();
+        }
+        ctx.restore();
+
+        // Back Legs & Webbed Claws
+        ctx.fillStyle = '#15803d';
+        ctx.beginPath();
+        ctx.ellipse(-8, -10, 6, 3.5, -0.4, 0, Math.PI * 2);
+        ctx.ellipse(-8, 10, 6, 3.5, 0.4, 0, Math.PI * 2);
+        ctx.ellipse(8, -10, 6, 3.5, 0.4, 0, Math.PI * 2);
+        ctx.ellipse(8, 10, 6, 3.5, -0.4, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Main Scaly Body
+        const crocBodyGrad = ctx.createLinearGradient(0, -9, 0, 9);
+        crocBodyGrad.addColorStop(0, '#15803d');
+        crocBodyGrad.addColorStop(0.5, '#16a34a');
+        crocBodyGrad.addColorStop(1, '#166534');
+        ctx.fillStyle = crocBodyGrad;
+        ctx.beginPath();
+        ctx.ellipse(0, 0, 16, 9, 0, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Dorsal Saw Scutes along spine (Gai lưng cá sấu)
+        ctx.fillStyle = '#14532d';
+        for (let sx = -10; sx <= 6; sx += 4) {
+          ctx.beginPath();
+          ctx.moveTo(sx, -4);
+          ctx.lineTo(sx + 2, -8);
+          ctx.lineTo(sx + 4, -4);
+          ctx.closePath();
+          ctx.fill();
+        }
+
+        // Long Snout & Head
+        ctx.fillStyle = '#15803d';
+        ctx.beginPath();
+        ctx.moveTo(10, -7);
+        ctx.lineTo(26, -4);
+        ctx.quadraticCurveTo(30, 0, 26, 4);
+        ctx.lineTo(10, 7);
+        ctx.closePath();
+        ctx.fill();
+
+        // Nostrils (Lỗ mũi)
+        ctx.fillStyle = '#064e3b';
+        ctx.beginPath();
+        ctx.arc(26, -2, 1, 0, Math.PI * 2);
+        ctx.arc(26, 2, 1, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Sharp White Teeth (Răng cá sấu)
+        ctx.fillStyle = '#ffffff';
+        for (let tx = 14; tx <= 24; tx += 3.5) {
+          ctx.beginPath();
+          ctx.moveTo(tx, -4.5);
+          ctx.lineTo(tx + 1.2, -6.5);
+          ctx.lineTo(tx + 2.4, -4.5);
+          ctx.closePath();
+          ctx.fill();
+
+          ctx.beginPath();
+          ctx.moveTo(tx, 4.5);
+          ctx.lineTo(tx + 1.2, 6.5);
+          ctx.lineTo(tx + 2.4, 4.5);
+          ctx.closePath();
+          ctx.fill();
+        }
+
+        // Golden Reptilian Slit Eyes (Mắt vàng rực rỡ với con ngươi dọc)
+        ctx.fillStyle = '#facc15';
+        ctx.beginPath();
+        ctx.arc(12, -5, 2.5, 0, Math.PI * 2);
+        ctx.arc(12, 5, 2.5, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Black Slit Pupils
+        ctx.fillStyle = '#022c22';
+        ctx.fillRect(11.5, -6.5, 1, 3);
+        ctx.fillRect(11.5, 3.5, 1, 3);
       } else {
         // Frog
         ctx.fillStyle = '#16a34a';
@@ -1818,23 +2502,87 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
         ctx.ellipse(decor.x, decor.y - 2, decor.width / 2.2, decor.height / 3.5, 0, 0, Math.PI * 2);
         ctx.fill();
       } else if (decor.type === 'tree_oak') {
-        // Oak Tree
-        ctx.fillStyle = '#5c2c16';
-        ctx.fillRect(decor.x - 12, decor.y - 30, 24, 45);
-        ctx.fillStyle = '#166534';
+        // Detailed Majestic Oak Tree
+        // Ground shadow
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.18)';
         ctx.beginPath();
-        ctx.arc(decor.x - 24, decor.y - 55, 30, 0, Math.PI * 2);
-        ctx.arc(decor.x + 24, decor.y - 55, 30, 0, Math.PI * 2);
-        ctx.arc(decor.x, decor.y - 75, 35, 0, Math.PI * 2);
+        ctx.ellipse(decor.x, decor.y + 12, 38, 14, 0, 0, Math.PI * 2);
         ctx.fill();
+
+        // Sprawling Roots
+        ctx.fillStyle = '#451a03';
+        ctx.beginPath();
+        ctx.moveTo(decor.x - 22, decor.y + 10);
+        ctx.quadraticCurveTo(decor.x - 8, decor.y - 5, decor.x - 14, decor.y - 25);
+        ctx.lineTo(decor.x + 14, decor.y - 25);
+        ctx.quadraticCurveTo(decor.x + 8, decor.y - 5, decor.x + 22, decor.y + 10);
+        ctx.closePath();
+        ctx.fill();
+
+        // Sturdy Trunk
+        ctx.fillStyle = '#5c2c16';
+        ctx.beginPath();
+        ctx.moveTo(decor.x - 14, decor.y + 8);
+        ctx.lineTo(decor.x - 11, decor.y - 38);
+        ctx.lineTo(decor.x + 11, decor.y - 38);
+        ctx.lineTo(decor.x + 14, decor.y + 8);
+        ctx.closePath();
+        ctx.fill();
+
+        // Trunk bark striations & branches
+        ctx.strokeStyle = '#381a08';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(decor.x - 4, decor.y + 6);
+        ctx.lineTo(decor.x - 5, decor.y - 32);
+        ctx.moveTo(decor.x + 4, decor.y + 6);
+        ctx.lineTo(decor.x + 3, decor.y - 32);
+        // Left & right branches reaching into canopy
+        ctx.moveTo(decor.x - 8, decor.y - 30);
+        ctx.lineTo(decor.x - 24, decor.y - 52);
+        ctx.moveTo(decor.x + 8, decor.y - 30);
+        ctx.lineTo(decor.x + 24, decor.y - 52);
+        ctx.stroke();
+
+        // Layer 1: Base Dark Green Shadow Canopy
+        ctx.fillStyle = '#064e3b';
+        ctx.beginPath();
+        ctx.arc(decor.x - 30, decor.y - 58, 30, 0, Math.PI * 2);
+        ctx.arc(decor.x + 30, decor.y - 58, 30, 0, Math.PI * 2);
+        ctx.arc(decor.x, decor.y - 82, 38, 0, Math.PI * 2);
+        ctx.arc(decor.x - 18, decor.y - 88, 28, 0, Math.PI * 2);
+        ctx.arc(decor.x + 18, decor.y - 88, 28, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Layer 2: Lush Forest Green Midtone
+        ctx.fillStyle = '#15803d';
+        ctx.beginPath();
+        ctx.arc(decor.x - 24, decor.y - 62, 26, 0, Math.PI * 2);
+        ctx.arc(decor.x + 24, decor.y - 62, 26, 0, Math.PI * 2);
+        ctx.arc(decor.x, decor.y - 84, 32, 0, Math.PI * 2);
+        ctx.arc(decor.x - 12, decor.y - 92, 24, 0, Math.PI * 2);
+        ctx.arc(decor.x + 12, decor.y - 92, 24, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Layer 3: Vibrant Leaf Green Canopy Lobes
         ctx.fillStyle = '#22c55e';
         ctx.beginPath();
-        ctx.arc(decor.x - 15, decor.y - 65, 22, 0, Math.PI * 2);
-        ctx.arc(decor.x + 15, decor.y - 65, 22, 0, Math.PI * 2);
-        ctx.arc(decor.x, decor.y - 85, 26, 0, Math.PI * 2);
+        ctx.arc(decor.x - 16, decor.y - 68, 20, 0, Math.PI * 2);
+        ctx.arc(decor.x + 16, decor.y - 68, 20, 0, Math.PI * 2);
+        ctx.arc(decor.x, decor.y - 92, 24, 0, Math.PI * 2);
+        ctx.arc(decor.x - 8, decor.y - 98, 16, 0, Math.PI * 2);
+        ctx.arc(decor.x + 8, decor.y - 98, 16, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Layer 4: Sunny Highlights
+        ctx.fillStyle = '#86efac';
+        ctx.beginPath();
+        ctx.arc(decor.x - 12, decor.y - 74, 11, 0, Math.PI * 2);
+        ctx.arc(decor.x + 14, decor.y - 72, 10, 0, Math.PI * 2);
+        ctx.arc(decor.x, decor.y - 98, 13, 0, Math.PI * 2);
         ctx.fill();
       } else if (decor.type === 'tree_pine') {
-        // Pine Tree
+        // Pine Tree (kept original as requested)
         ctx.fillStyle = '#451a03';
         ctx.fillRect(decor.x - 9, decor.y - 20, 18, 35);
         ctx.fillStyle = '#065f46';
@@ -1857,91 +2605,539 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
         ctx.closePath();
         ctx.fill();
       } else if (decor.type === 'tree_blossom') {
-        // Sakura Blossom Tree
-        ctx.fillStyle = '#582f1b';
-        ctx.fillRect(decor.x - 11, decor.y - 28, 22, 42);
+        // Detailed Cherry Blossom Tree with blooming sakura flowers & fallen petals
+        // Ground shadow
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.16)';
+        ctx.beginPath();
+        ctx.ellipse(decor.x, decor.y + 12, 36, 12, 0, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Fallen pink flower petals on grass
+        const petalColors = ['#f472b6', '#fbcfe8', '#fda4af', '#fb7185'];
+        const fallenPetals = [
+          { dx: -24, dy: 10, r: 2.2 },
+          { dx: -16, dy: 14, r: 1.8 },
+          { dx: -8, dy: 8, r: 2.4 },
+          { dx: 12, dy: 11, r: 2.0 },
+          { dx: 22, dy: 13, r: 2.3 },
+          { dx: 28, dy: 8, r: 1.7 },
+        ];
+        fallenPetals.forEach((fp, idx) => {
+          ctx.fillStyle = petalColors[idx % petalColors.length];
+          ctx.beginPath();
+          ctx.ellipse(decor.x + fp.dx, decor.y + fp.dy, fp.r * 1.4, fp.r * 0.8, 0.4, 0, Math.PI * 2);
+          ctx.fill();
+        });
+
+        // Detailed Cherry Tree Trunk & Roots
+        ctx.fillStyle = '#4a2211';
+        ctx.beginPath();
+        ctx.moveTo(decor.x - 18, decor.y + 10);
+        ctx.quadraticCurveTo(decor.x - 6, decor.y - 5, decor.x - 12, decor.y - 32);
+        ctx.lineTo(decor.x + 12, decor.y - 32);
+        ctx.quadraticCurveTo(decor.x + 6, decor.y - 5, decor.x + 18, decor.y + 10);
+        ctx.closePath();
+        ctx.fill();
+
+        // Bark highlights & wood grain
+        ctx.strokeStyle = '#78350f';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(decor.x - 3, decor.y + 6);
+        ctx.lineTo(decor.x - 4, decor.y - 28);
+        ctx.moveTo(decor.x + 3, decor.y + 6);
+        ctx.lineTo(decor.x + 4, decor.y - 28);
+        ctx.stroke();
+
+        // Branch forks extending into pink canopy
+        ctx.strokeStyle = '#381a0d';
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.moveTo(decor.x - 8, decor.y - 25);
+        ctx.quadraticCurveTo(decor.x - 18, decor.y - 42, decor.x - 26, decor.y - 50);
+        ctx.moveTo(decor.x + 8, decor.y - 25);
+        ctx.quadraticCurveTo(decor.x + 18, decor.y - 42, decor.x + 26, decor.y - 50);
+        ctx.moveTo(decor.x, decor.y - 30);
+        ctx.lineTo(decor.x, decor.y - 65);
+        ctx.stroke();
+
+        // Layer 1: Deep Rose Shadow Blossom Canopy
+        ctx.fillStyle = '#9d174d';
+        ctx.beginPath();
+        ctx.arc(decor.x - 28, decor.y - 54, 28, 0, Math.PI * 2);
+        ctx.arc(decor.x + 28, decor.y - 54, 28, 0, Math.PI * 2);
+        ctx.arc(decor.x, decor.y - 76, 36, 0, Math.PI * 2);
+        ctx.arc(decor.x - 16, decor.y - 84, 26, 0, Math.PI * 2);
+        ctx.arc(decor.x + 16, decor.y - 84, 26, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Layer 2: Vibrant Cherry Blossom Pink
         ctx.fillStyle = '#db2777';
         ctx.beginPath();
-        ctx.arc(decor.x - 22, decor.y - 50, 28, 0, Math.PI * 2);
-        ctx.arc(decor.x + 22, decor.y - 50, 28, 0, Math.PI * 2);
-        ctx.arc(decor.x, decor.y - 70, 32, 0, Math.PI * 2);
+        ctx.arc(decor.x - 24, decor.y - 58, 25, 0, Math.PI * 2);
+        ctx.arc(decor.x + 24, decor.y - 58, 25, 0, Math.PI * 2);
+        ctx.arc(decor.x, decor.y - 78, 32, 0, Math.PI * 2);
+        ctx.arc(decor.x - 12, decor.y - 86, 24, 0, Math.PI * 2);
+        ctx.arc(decor.x + 12, decor.y - 86, 24, 0, Math.PI * 2);
         ctx.fill();
+
+        // Layer 3: Soft Pastel Sakura Puffs
         ctx.fillStyle = '#f472b6';
         ctx.beginPath();
-        ctx.arc(decor.x - 12, decor.y - 60, 20, 0, Math.PI * 2);
-        ctx.arc(decor.x + 12, decor.y - 60, 20, 0, Math.PI * 2);
-        ctx.arc(decor.x, decor.y - 78, 24, 0, Math.PI * 2);
+        ctx.arc(decor.x - 15, decor.y - 64, 20, 0, Math.PI * 2);
+        ctx.arc(decor.x + 15, decor.y - 64, 20, 0, Math.PI * 2);
+        ctx.arc(decor.x, decor.y - 84, 26, 0, Math.PI * 2);
+        ctx.arc(decor.x - 8, decor.y - 92, 17, 0, Math.PI * 2);
+        ctx.arc(decor.x + 8, decor.y - 92, 17, 0, Math.PI * 2);
         ctx.fill();
-      } else if (decor.type === 'tree_apple') {
-        // Apple Tree with red apples
-        ctx.fillStyle = '#5c2c16';
-        ctx.fillRect(decor.x - 12, decor.y - 28, 24, 42);
-        ctx.fillStyle = '#15803d';
+
+        // Layer 4: Light Powder Highlights
+        ctx.fillStyle = '#fbcfe8';
         ctx.beginPath();
-        ctx.arc(decor.x, decor.y - 65, 36, 0, Math.PI * 2);
+        ctx.arc(decor.x - 12, decor.y - 70, 12, 0, Math.PI * 2);
+        ctx.arc(decor.x + 14, decor.y - 68, 11, 0, Math.PI * 2);
+        ctx.arc(decor.x, decor.y - 92, 14, 0, Math.PI * 2);
         ctx.fill();
-        // Red Apples
-        ctx.fillStyle = '#ef4444';
-        for (let ap = 0; ap < 5; ap++) {
-          const apx = decor.x + Math.sin(ap * 2) * 20;
-          const apy = decor.y - 65 + Math.cos(ap * 2) * 18;
+
+        // Distinct Blooming Sakura 5-Petal Flowers with Golden Centers
+        const blossoms = [
+          { bx: -32, by: -52, size: 5.5 },
+          { bx: -20, by: -75, size: 6.0 },
+          { bx: -10, by: -50, size: 5.0 },
+          { bx: -2, by: -96, size: 6.5 },
+          { bx: 14, by: -88, size: 5.5 },
+          { bx: 28, by: -62, size: 6.0 },
+          { bx: 8, by: -60, size: 5.0 },
+          { bx: -22, by: -90, size: 5.0 },
+          { bx: 22, by: -46, size: 5.2 },
+          { bx: 0, by: -76, size: 6.5 },
+        ];
+
+        for (const b of blossoms) {
+          const fx = decor.x + b.bx;
+          const fy = decor.y + b.by;
+          const r = b.size;
+
+          // 5 Flower Petals
+          ctx.fillStyle = '#ffe4e6';
+          for (let p = 0; p < 5; p++) {
+            const pa = (p * Math.PI * 2) / 5 - Math.PI / 2;
+            const px = fx + Math.cos(pa) * (r * 0.75);
+            const py = fy + Math.sin(pa) * (r * 0.75);
+            ctx.beginPath();
+            ctx.arc(px, py, r * 0.6, 0, Math.PI * 2);
+            ctx.fill();
+          }
+
+          // Flower Core
+          ctx.fillStyle = '#f43f5e';
           ctx.beginPath();
-          ctx.arc(apx, apy, 4.5, 0, Math.PI * 2);
+          ctx.arc(fx, fy, r * 0.4, 0, Math.PI * 2);
+          ctx.fill();
+
+          // Golden Pistil / Stamen
+          ctx.fillStyle = '#fef08a';
+          ctx.beginPath();
+          ctx.arc(fx, fy, r * 0.22, 0, Math.PI * 2);
           ctx.fill();
         }
-      } else if (decor.type === 'tree_golden') {
-        // Golden Tree with sparkling leaves
-        ctx.fillStyle = '#78350f';
-        ctx.fillRect(decor.x - 12, decor.y - 28, 24, 42);
-        ctx.fillStyle = '#eab308';
+      } else if (decor.type === 'tree_apple') {
+        // Detailed Apple Tree with 3D apples, stems, and apple blossoms
+        // Ground shadow
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.18)';
         ctx.beginPath();
-        ctx.arc(decor.x, decor.y - 70, 38, 0, Math.PI * 2);
+        ctx.ellipse(decor.x, decor.y + 12, 36, 12, 0, 0, Math.PI * 2);
         ctx.fill();
-        ctx.fillStyle = '#fef08a';
+
+        // Trunk & Roots
+        ctx.fillStyle = '#4a2211';
         ctx.beginPath();
-        ctx.arc(decor.x - 12, decor.y - 75, 22, 0, Math.PI * 2);
-        ctx.arc(decor.x + 12, decor.y - 75, 22, 0, Math.PI * 2);
+        ctx.moveTo(decor.x - 16, decor.y + 10);
+        ctx.quadraticCurveTo(decor.x - 5, decor.y - 5, decor.x - 11, decor.y - 30);
+        ctx.lineTo(decor.x + 11, decor.y - 30);
+        ctx.quadraticCurveTo(decor.x + 5, decor.y - 5, decor.x + 16, decor.y + 10);
+        ctx.closePath();
         ctx.fill();
-      } else if (decor.type === 'tree_willow') {
-        // Willow Tree with drooping vines
-        ctx.fillStyle = '#451a03';
-        ctx.fillRect(decor.x - 14, decor.y - 30, 28, 45);
+
+        // Branches
+        ctx.strokeStyle = '#381a0d';
+        ctx.lineWidth = 2.5;
+        ctx.beginPath();
+        ctx.moveTo(decor.x - 6, decor.y - 25);
+        ctx.lineTo(decor.x - 20, decor.y - 45);
+        ctx.moveTo(decor.x + 6, decor.y - 25);
+        ctx.lineTo(decor.x + 20, decor.y - 45);
+        ctx.stroke();
+
+        // Layer 1: Dark Green Canopy
+        ctx.fillStyle = '#064e3b';
+        ctx.beginPath();
+        ctx.arc(decor.x - 22, decor.y - 55, 26, 0, Math.PI * 2);
+        ctx.arc(decor.x + 22, decor.y - 55, 26, 0, Math.PI * 2);
+        ctx.arc(decor.x, decor.y - 75, 34, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Layer 2: Vibrant Orchard Leaf Green
         ctx.fillStyle = '#15803d';
         ctx.beginPath();
-        ctx.ellipse(decor.x, decor.y - 70, 42, 30, 0, 0, Math.PI * 2);
+        ctx.arc(decor.x - 18, decor.y - 58, 23, 0, Math.PI * 2);
+        ctx.arc(decor.x + 18, decor.y - 58, 23, 0, Math.PI * 2);
+        ctx.arc(decor.x, decor.y - 78, 28, 0, Math.PI * 2);
         ctx.fill();
-        ctx.strokeStyle = '#4ade80';
-        ctx.lineWidth = 3;
-        for (let v = -30; v <= 30; v += 12) {
-          ctx.beginPath();
-          ctx.moveTo(decor.x + v, decor.y - 65);
-          ctx.quadraticCurveTo(decor.x + v + 8, decor.y - 30, decor.x + v, decor.y - 10);
-          ctx.stroke();
-        }
-      } else if (decor.type === 'tree_birch') {
-        // Birch Tree with white trunk & notches
-        ctx.fillStyle = '#f8fafc';
-        ctx.fillRect(decor.x - 10, decor.y - 35, 20, 50);
-        ctx.fillStyle = '#0f172a';
-        ctx.fillRect(decor.x - 10, decor.y - 25, 8, 3);
-        ctx.fillRect(decor.x + 2, decor.y - 12, 8, 3);
-        ctx.fillStyle = '#facc15';
+
+        // Layer 3: Sunlit Highlights
+        ctx.fillStyle = '#22c55e';
         ctx.beginPath();
-        ctx.ellipse(decor.x, decor.y - 75, 28, 36, 0, 0, Math.PI * 2);
+        ctx.arc(decor.x - 10, decor.y - 64, 16, 0, Math.PI * 2);
+        ctx.arc(decor.x + 12, decor.y - 64, 16, 0, Math.PI * 2);
+        ctx.arc(decor.x, decor.y - 84, 18, 0, Math.PI * 2);
+        ctx.fill();
+
+        // White-Pink Apple Blossoms
+        const appleBlossoms = [
+          { bx: -26, by: -62 },
+          { bx: 24, by: -72 },
+          { bx: -4, by: -94 },
+          { bx: 16, by: -48 },
+        ];
+        appleBlossoms.forEach((ab) => {
+          const afx = decor.x + ab.bx;
+          const afy = decor.y + ab.by;
+          ctx.fillStyle = '#fff1f2';
+          for (let p = 0; p < 5; p++) {
+            const pa = (p * Math.PI * 2) / 5;
+            ctx.beginPath();
+            ctx.arc(afx + Math.cos(pa) * 3, afy + Math.sin(pa) * 3, 2.2, 0, Math.PI * 2);
+            ctx.fill();
+          }
+          ctx.fillStyle = '#fef08a';
+          ctx.beginPath();
+          ctx.arc(afx, afy, 1.5, 0, Math.PI * 2);
+          ctx.fill();
+        });
+
+        // Juicy Red Apples with stems, leaf and shine
+        const applePositions = [
+          { dx: -20, dy: -46 },
+          { dx: -12, dy: -74 },
+          { dx: 8, dy: -56 },
+          { dx: 22, dy: -52 },
+          { dx: -2, dy: -80 },
+          { dx: 18, dy: -78 },
+        ];
+        applePositions.forEach((ap) => {
+          const ax = decor.x + ap.dx;
+          const ay = decor.y + ap.dy;
+
+          // Apple Stem
+          ctx.strokeStyle = '#451a03';
+          ctx.lineWidth = 1.2;
+          ctx.beginPath();
+          ctx.moveTo(ax, ay - 4);
+          ctx.lineTo(ax + 2, ay - 7);
+          ctx.stroke();
+
+          // Apple Leaf
+          ctx.fillStyle = '#4ade80';
+          ctx.beginPath();
+          ctx.ellipse(ax + 3, ay - 6, 2, 1, 0.4, 0, Math.PI * 2);
+          ctx.fill();
+
+          // Apple Body (Deep red with bright red gradient)
+          ctx.fillStyle = '#b91c1c';
+          ctx.beginPath();
+          ctx.arc(ax, ay, 5.5, 0, Math.PI * 2);
+          ctx.fill();
+
+          ctx.fillStyle = '#ef4444';
+          ctx.beginPath();
+          ctx.arc(ax - 0.8, ay - 0.8, 4.5, 0, Math.PI * 2);
+          ctx.fill();
+
+          // Specular Glint
+          ctx.fillStyle = '#ffffff';
+          ctx.beginPath();
+          ctx.arc(ax - 1.8, ay - 1.8, 1.4, 0, Math.PI * 2);
+          ctx.fill();
+        });
+      } else if (decor.type === 'tree_golden') {
+        // Detailed Ancient Mystic Golden Tree
+        // Ground shadow with golden aura
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.18)';
+        ctx.beginPath();
+        ctx.ellipse(decor.x, decor.y + 12, 42, 14, 0, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.fillStyle = 'rgba(251, 191, 36, 0.12)';
+        ctx.beginPath();
+        ctx.ellipse(decor.x, decor.y + 12, 55, 18, 0, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Ancient Golden Trunk & Roots
+        ctx.fillStyle = '#78350f';
+        ctx.beginPath();
+        ctx.moveTo(decor.x - 20, decor.y + 10);
+        ctx.quadraticCurveTo(decor.x - 6, decor.y - 5, decor.x - 13, decor.y - 34);
+        ctx.lineTo(decor.x + 13, decor.y - 34);
+        ctx.quadraticCurveTo(decor.x + 6, decor.y - 5, decor.x + 20, decor.y + 10);
+        ctx.closePath();
+        ctx.fill();
+
+        // Golden Bark Inscriptions
+        ctx.strokeStyle = '#f59e0b';
+        ctx.lineWidth = 1.8;
+        ctx.beginPath();
+        ctx.moveTo(decor.x - 4, decor.y + 6);
+        ctx.lineTo(decor.x - 5, decor.y - 30);
+        ctx.moveTo(decor.x + 4, decor.y + 6);
+        ctx.lineTo(decor.x + 5, decor.y - 30);
+        ctx.stroke();
+
+        // Layer 1: Warm Amber Base Canopy
+        ctx.fillStyle = '#92400e';
+        ctx.beginPath();
+        ctx.arc(decor.x - 28, decor.y - 58, 28, 0, Math.PI * 2);
+        ctx.arc(decor.x + 28, decor.y - 58, 28, 0, Math.PI * 2);
+        ctx.arc(decor.x, decor.y - 82, 38, 0, Math.PI * 2);
+        ctx.arc(decor.x - 16, decor.y - 88, 26, 0, Math.PI * 2);
+        ctx.arc(decor.x + 16, decor.y - 88, 26, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Layer 2: Shimmering Gold Midtone
+        ctx.fillStyle = '#d97706';
+        ctx.beginPath();
+        ctx.arc(decor.x - 24, decor.y - 62, 25, 0, Math.PI * 2);
+        ctx.arc(decor.x + 24, decor.y - 62, 25, 0, Math.PI * 2);
+        ctx.arc(decor.x, decor.y - 84, 32, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Layer 3: Brilliant Golden Foliage
+        ctx.fillStyle = '#eab308';
+        ctx.beginPath();
+        ctx.arc(decor.x - 16, decor.y - 68, 20, 0, Math.PI * 2);
+        ctx.arc(decor.x + 16, decor.y - 68, 20, 0, Math.PI * 2);
+        ctx.arc(decor.x, decor.y - 90, 26, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Layer 4: Luminous Highlights
+        ctx.fillStyle = '#fef08a';
+        ctx.beginPath();
+        ctx.arc(decor.x - 12, decor.y - 74, 12, 0, Math.PI * 2);
+        ctx.arc(decor.x + 12, decor.y - 74, 12, 0, Math.PI * 2);
+        ctx.arc(decor.x, decor.y - 96, 14, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Golden Star Flower/Spore Motifs
+        const goldStars = [
+          { gx: -24, gy: -56 },
+          { gx: 22, gy: -60 },
+          { gx: -6, gy: -82 },
+          { gx: 16, gy: -94 },
+          { gx: -18, gy: -96 },
+        ];
+        goldStars.forEach((gs) => {
+          ctx.fillStyle = '#ffffff';
+          ctx.beginPath();
+          ctx.arc(decor.x + gs.gx, decor.y + gs.gy, 2.2, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.fillStyle = '#fde047';
+          ctx.beginPath();
+          ctx.arc(decor.x + gs.gx, decor.y + gs.gy, 3.8, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.fillStyle = '#ffffff';
+          ctx.beginPath();
+          ctx.arc(decor.x + gs.gx, decor.y + gs.gy, 1.8, 0, Math.PI * 2);
+          ctx.fill();
+        });
+      } else if (decor.type === 'tree_willow') {
+        // Detailed Weeping Willow with cascading vine braids & leaf nodes
+        // Ground shadow
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.18)';
+        ctx.beginPath();
+        ctx.ellipse(decor.x, decor.y + 12, 40, 14, 0, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Trunk & Roots
+        ctx.fillStyle = '#451a03';
+        ctx.beginPath();
+        ctx.moveTo(decor.x - 18, decor.y + 10);
+        ctx.quadraticCurveTo(decor.x - 6, decor.y - 5, decor.x - 14, decor.y - 32);
+        ctx.lineTo(decor.x + 14, decor.y - 32);
+        ctx.quadraticCurveTo(decor.x + 6, decor.y - 5, decor.x + 18, decor.y + 10);
+        ctx.closePath();
+        ctx.fill();
+
+        // Bark texture
+        ctx.strokeStyle = '#78350f';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(decor.x - 4, decor.y + 6);
+        ctx.lineTo(decor.x - 4, decor.y - 28);
+        ctx.moveTo(decor.x + 4, decor.y + 6);
+        ctx.lineTo(decor.x + 4, decor.y - 28);
+        ctx.stroke();
+
+        // Canopy Crown Base
+        ctx.fillStyle = '#064e3b';
+        ctx.beginPath();
+        ctx.ellipse(decor.x, decor.y - 74, 44, 32, 0, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.fillStyle = '#15803d';
+        ctx.beginPath();
+        ctx.ellipse(decor.x, decor.y - 78, 38, 26, 0, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.fillStyle = '#22c55e';
+        ctx.beginPath();
+        ctx.ellipse(decor.x, decor.y - 84, 28, 18, 0, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Cascading Weeping Willow Vine Braids
+        const willowVines = [-36, -26, -16, -8, 0, 8, 16, 26, 36];
+        willowVines.forEach((vx, idx) => {
+          const lengthVar = (idx % 2 === 0 ? 60 : 75) + Math.sin(idx) * 8;
+          ctx.strokeStyle = idx % 2 === 0 ? '#16a34a' : '#4ade80';
+          ctx.lineWidth = 2.4;
+          ctx.beginPath();
+          ctx.moveTo(decor.x + vx, decor.y - 70);
+          ctx.quadraticCurveTo(
+            decor.x + vx + (idx % 2 === 0 ? 8 : -8),
+            decor.y - 70 + lengthVar * 0.5,
+            decor.x + vx + (idx % 2 === 0 ? 3 : -3),
+            decor.y - 70 + lengthVar
+          );
+          ctx.stroke();
+
+          // Leaf Nodes along the vine
+          ctx.fillStyle = '#86efac';
+          for (let step = 15; step < lengthVar - 5; step += 14) {
+            ctx.beginPath();
+            ctx.ellipse(
+              decor.x + vx + (idx % 2 === 0 ? 4 : -4),
+              decor.y - 70 + step,
+              2.5,
+              1.4,
+              0.5,
+              0,
+              Math.PI * 2
+            );
+            ctx.fill();
+          }
+        });
+      } else if (decor.type === 'tree_birch') {
+        // Detailed Birch Tree with realistic white bark, lenticels & golden foliage
+        // Ground shadow
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.16)';
+        ctx.beginPath();
+        ctx.ellipse(decor.x, decor.y + 12, 30, 10, 0, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Slender White Birch Trunk
+        ctx.fillStyle = '#f8fafc';
+        ctx.beginPath();
+        ctx.moveTo(decor.x - 10, decor.y + 10);
+        ctx.lineTo(decor.x - 7, decor.y - 42);
+        ctx.lineTo(decor.x + 7, decor.y - 42);
+        ctx.lineTo(decor.x + 10, decor.y + 10);
+        ctx.closePath();
+        ctx.fill();
+
+        // Birch Bark Dark Lenticels & Markings
+        ctx.fillStyle = '#1e293b';
+        ctx.fillRect(decor.x - 9, decor.y + 2, 7, 3);
+        ctx.fillRect(decor.x + 1, decor.y - 8, 8, 3.5);
+        ctx.fillRect(decor.x - 8, decor.y - 18, 6, 2.5);
+        ctx.fillRect(decor.x + 2, decor.y - 28, 7, 3);
+        ctx.fillRect(decor.x - 7, decor.y - 36, 5, 2.5);
+
+        // Birch Branches
+        ctx.strokeStyle = '#334155';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(decor.x - 6, decor.y - 35);
+        ctx.lineTo(decor.x - 18, decor.y - 55);
+        ctx.moveTo(decor.x + 6, decor.y - 35);
+        ctx.lineTo(decor.x + 18, decor.y - 55);
+        ctx.stroke();
+
+        // Layer 1: Dark Amber Canopy
+        ctx.fillStyle = '#b45309';
+        ctx.beginPath();
+        ctx.ellipse(decor.x, decor.y - 78, 30, 42, 0, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Layer 2: Vibrant Golden Yellow Birch Canopy
+        ctx.fillStyle = '#eab308';
+        ctx.beginPath();
+        ctx.ellipse(decor.x, decor.y - 82, 26, 36, 0, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Layer 3: Sunlit Golden Highlights
+        ctx.fillStyle = '#fde047';
+        ctx.beginPath();
+        ctx.arc(decor.x - 8, decor.y - 86, 15, 0, Math.PI * 2);
+        ctx.arc(decor.x + 8, decor.y - 86, 15, 0, Math.PI * 2);
+        ctx.arc(decor.x, decor.y - 100, 14, 0, Math.PI * 2);
         ctx.fill();
       } else if (decor.type === 'tree_maple') {
-        // Autumn Red/Orange Maple Tree
-        ctx.fillStyle = '#5c2c16';
-        ctx.fillRect(decor.x - 12, decor.y - 30, 24, 45);
+        // Detailed Autumn Crimson/Orange Maple Tree
+        // Ground shadow
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.18)';
+        ctx.beginPath();
+        ctx.ellipse(decor.x, decor.y + 12, 36, 12, 0, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Trunk & Roots
+        ctx.fillStyle = '#4a2211';
+        ctx.beginPath();
+        ctx.moveTo(decor.x - 16, decor.y + 10);
+        ctx.quadraticCurveTo(decor.x - 5, decor.y - 5, decor.x - 12, decor.y - 32);
+        ctx.lineTo(decor.x + 12, decor.y - 32);
+        ctx.quadraticCurveTo(decor.x + 5, decor.y - 5, decor.x + 16, decor.y + 10);
+        ctx.closePath();
+        ctx.fill();
+
+        // Branches
+        ctx.strokeStyle = '#381a0d';
+        ctx.lineWidth = 2.5;
+        ctx.beginPath();
+        ctx.moveTo(decor.x - 6, decor.y - 25);
+        ctx.lineTo(decor.x - 22, decor.y - 50);
+        ctx.moveTo(decor.x + 6, decor.y - 25);
+        ctx.lineTo(decor.x + 22, decor.y - 50);
+        ctx.stroke();
+
+        // Layer 1: Deep Crimson Red Base
+        ctx.fillStyle = '#991b1b';
+        ctx.beginPath();
+        ctx.arc(decor.x - 26, decor.y - 56, 26, 0, Math.PI * 2);
+        ctx.arc(decor.x + 26, decor.y - 56, 26, 0, Math.PI * 2);
+        ctx.arc(decor.x, decor.y - 78, 34, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Layer 2: Rich Autumn Scarlet
+        ctx.fillStyle = '#dc2626';
+        ctx.beginPath();
+        ctx.arc(decor.x - 20, decor.y - 60, 24, 0, Math.PI * 2);
+        ctx.arc(decor.x + 20, decor.y - 60, 24, 0, Math.PI * 2);
+        ctx.arc(decor.x, decor.y - 82, 30, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Layer 3: Vibrant Orange Canopy
         ctx.fillStyle = '#ea580c';
         ctx.beginPath();
-        ctx.arc(decor.x - 20, decor.y - 60, 28, 0, Math.PI * 2);
-        ctx.arc(decor.x + 20, decor.y - 60, 28, 0, Math.PI * 2);
-        ctx.arc(decor.x, decor.y - 80, 32, 0, Math.PI * 2);
+        ctx.arc(decor.x - 14, decor.y - 66, 18, 0, Math.PI * 2);
+        ctx.arc(decor.x + 14, decor.y - 66, 18, 0, Math.PI * 2);
+        ctx.arc(decor.x, decor.y - 88, 24, 0, Math.PI * 2);
         ctx.fill();
-        ctx.fillStyle = '#f97316';
+
+        // Layer 4: Warm Amber Highlights
+        ctx.fillStyle = '#f59e0b';
         ctx.beginPath();
-        ctx.arc(decor.x, decor.y - 70, 24, 0, Math.PI * 2);
+        ctx.arc(decor.x - 10, decor.y - 72, 12, 0, Math.PI * 2);
+        ctx.arc(decor.x + 10, decor.y - 72, 12, 0, Math.PI * 2);
+        ctx.arc(decor.x, decor.y - 94, 14, 0, Math.PI * 2);
         ctx.fill();
       } else if (decor.type === 'mushroom_red' || decor.type === 'mushroom_glow') {
         const isGlow = decor.type === 'mushroom_glow';
@@ -2018,6 +3214,253 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
     ctx.restore();
   };
 
+  const drawRescues = (ctx: CanvasRenderingContext2D, time: number) => {
+    ctx.save();
+    for (const rescue of rescuesRef.current) {
+      const { x, y, type, status, icon, titleVi } = rescue;
+      const isSaved = status === 'saved';
+
+      ctx.save();
+      ctx.translate(x, y);
+
+      // Pulse calculation for animations
+      const pulse = (Math.sin(time * 0.005 + x) + 1) / 2;
+
+      if (type === 'hedgehog_thorns') {
+        if (!isSaved) {
+          // 1. Spiky Thorn Bush
+          ctx.strokeStyle = '#78350f';
+          ctx.lineWidth = 3;
+          ctx.beginPath();
+          for (let a = 0; a < Math.PI * 2; a += Math.PI / 4) {
+            const rad = 24 + (a % 2 === 0 ? 6 : -4);
+            ctx.lineTo(Math.cos(a) * rad, Math.sin(a) * rad);
+          }
+          ctx.closePath();
+          ctx.fillStyle = '#451a0344';
+          ctx.fill();
+          ctx.stroke();
+
+          // Red sharp thorns
+          ctx.fillStyle = '#ef4444';
+          for (let a = 0; a < Math.PI * 2; a += Math.PI / 3) {
+            const tx = Math.cos(a) * 22;
+            const ty = Math.sin(a) * 22;
+            ctx.beginPath();
+            ctx.arc(tx, ty, 3, 0, Math.PI * 2);
+            ctx.fill();
+          }
+
+          // Trembling Hedgehog Body inside
+          const tremble = Math.sin(time * 0.03) * 1.5;
+          ctx.fillStyle = '#92400e';
+          ctx.beginPath();
+          ctx.ellipse(tremble, tremble, 14, 11, 0, 0, Math.PI * 2);
+          ctx.fill();
+
+          // Hedgehog quills
+          ctx.strokeStyle = '#451a03';
+          ctx.lineWidth = 2;
+          for (let s = 0; s < 6; s++) {
+            const sa = (s * Math.PI) / 5 + Math.PI;
+            ctx.beginPath();
+            ctx.moveTo(tremble + Math.cos(sa) * 8, tremble + Math.sin(sa) * 8);
+            ctx.lineTo(tremble + Math.cos(sa) * 15, tremble + Math.sin(sa) * 15);
+            ctx.stroke();
+          }
+
+          // Teary eyes
+          ctx.fillStyle = '#38bdf8';
+          ctx.beginPath();
+          ctx.arc(tremble + 4, tremble - 2, 2, 0, Math.PI * 2);
+          ctx.fill();
+        } else {
+          // Happy Saved Hedgehog with Flower Wreath
+          const hop = Math.abs(Math.sin(time * 0.006)) * 8;
+          ctx.fillStyle = '#d97706';
+          ctx.beginPath();
+          ctx.ellipse(0, -hop, 15, 12, 0, 0, Math.PI * 2);
+          ctx.fill();
+
+          // Smiling face & rosy cheeks
+          ctx.fillStyle = '#fbcfe8';
+          ctx.beginPath();
+          ctx.arc(8, -hop + 2, 3, 0, Math.PI * 2);
+          ctx.fill();
+
+          // Flower crown
+          ctx.fillStyle = '#ec4899';
+          ctx.beginPath();
+          ctx.arc(2, -hop - 10, 4, 0, Math.PI * 2);
+          ctx.arc(-4, -hop - 8, 3, 0, Math.PI * 2);
+          ctx.arc(6, -hop - 8, 3, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      } else if (type === 'stream_trash') {
+        if (!isSaved) {
+          // Murky Water Ripple
+          ctx.fillStyle = 'rgba(113, 63, 18, 0.45)';
+          ctx.beginPath();
+          ctx.ellipse(0, 0, 32, 18, 0, 0, Math.PI * 2);
+          ctx.fill();
+
+          // Floating Plastic bottles and cans
+          ctx.fillStyle = '#38bdf8';
+          ctx.fillRect(-16, -6, 14, 7);
+          ctx.fillStyle = '#ef4444';
+          ctx.fillRect(4, -4, 12, 8);
+          ctx.fillStyle = '#e2e8f0';
+          ctx.beginPath();
+          ctx.ellipse(-2, 4, 10, 6, 0.3, 0, Math.PI * 2);
+          ctx.fill();
+        } else {
+          // Sparkling Clear Waters & Leaping Fish
+          ctx.fillStyle = 'rgba(56, 189, 248, 0.35)';
+          ctx.beginPath();
+          ctx.ellipse(0, 0, 36, 20, 0, 0, Math.PI * 2);
+          ctx.fill();
+
+          const fishHop = Math.sin(time * 0.005) * 14;
+          if (fishHop < 0) {
+            ctx.fillStyle = '#fb923c';
+            ctx.beginPath();
+            ctx.ellipse(0, fishHop, 8, 4, -0.4, 0, Math.PI * 2);
+            ctx.fill();
+            // Tail
+            ctx.beginPath();
+            ctx.moveTo(-6, fishHop);
+            ctx.lineTo(-10, fishHop - 4);
+            ctx.lineTo(-10, fishHop + 4);
+            ctx.closePath();
+            ctx.fill();
+          }
+
+          // Water lilies
+          ctx.fillStyle = '#f472b6';
+          ctx.beginPath();
+          ctx.arc(14, 4, 4, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      } else if (type === 'wildfire_ember') {
+        if (!isSaved) {
+          // Charred ground & burning logs
+          ctx.fillStyle = '#18181b';
+          ctx.beginPath();
+          ctx.ellipse(0, 4, 28, 16, 0, 0, Math.PI * 2);
+          ctx.fill();
+
+          // Glowing red/orange embers
+          ctx.fillStyle = `rgba(239, 68, 68, ${0.6 + pulse * 0.4})`;
+          ctx.beginPath();
+          ctx.arc(-8, 2, 7, 0, Math.PI * 2);
+          ctx.arc(6, 4, 8, 0, Math.PI * 2);
+          ctx.arc(0, -3, 6, 0, Math.PI * 2);
+          ctx.fill();
+
+          // Charred logs
+          ctx.fillStyle = '#27272a';
+          ctx.fillRect(-18, 0, 36, 6);
+        } else {
+          // Blooming Forest Garden with Magical Sprout
+          ctx.fillStyle = '#86efac';
+          ctx.beginPath();
+          ctx.ellipse(0, 6, 26, 14, 0, 0, Math.PI * 2);
+          ctx.fill();
+
+          // Glowing flower
+          ctx.fillStyle = '#22c55e';
+          ctx.fillRect(-2, -14, 4, 16);
+          ctx.fillStyle = '#a855f7';
+          ctx.beginPath();
+          ctx.arc(0, -16, 7, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.fillStyle = '#fef08a';
+          ctx.beginPath();
+          ctx.arc(0, -16, 3, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      } else if (type === 'fallen_nest') {
+        if (!isSaved) {
+          // Fallen twigs nest on ground
+          ctx.strokeStyle = '#78350f';
+          ctx.lineWidth = 2.5;
+          ctx.beginPath();
+          ctx.arc(0, 4, 18, 0, Math.PI);
+          ctx.stroke();
+
+          // Two baby chicks
+          const tweet = Math.sin(time * 0.01) * 2;
+          ctx.fillStyle = '#facc15';
+          ctx.beginPath();
+          ctx.arc(-6, tweet, 7, 0, Math.PI * 2);
+          ctx.arc(6, -tweet, 7, 0, Math.PI * 2);
+          ctx.fill();
+
+          // Orange beaks
+          ctx.fillStyle = '#f97316';
+          ctx.beginPath();
+          ctx.moveTo(-1, tweet - 1);
+          ctx.lineTo(2, tweet);
+          ctx.lineTo(-1, tweet + 1);
+          ctx.closePath();
+          ctx.fill();
+        } else {
+          // Restored nest & Mama bird
+          ctx.fillStyle = '#86efac44';
+          ctx.beginPath();
+          ctx.ellipse(0, 0, 22, 12, 0, 0, Math.PI * 2);
+          ctx.fill();
+
+          // Mama bluebird perched
+          ctx.fillStyle = '#38bdf8';
+          ctx.beginPath();
+          ctx.ellipse(0, -10, 10, 7, -0.2, 0, Math.PI * 2);
+          ctx.arc(6, -15, 5, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+
+      // Overhead Floating Alert Banner
+      ctx.font = 'bold 11px system-ui, sans-serif';
+      ctx.textAlign = 'center';
+      const badgeY = -34 - Math.sin(time * 0.005) * 4;
+
+      if (!isSaved) {
+        // Red / Orange Glowing SOS Badge
+        const tagText = `${icon} ${titleVi}`;
+        const tagWidth = ctx.measureText(tagText).width + 16;
+        
+        ctx.fillStyle = 'rgba(15, 23, 42, 0.85)';
+        ctx.strokeStyle = '#ef4444';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.roundRect(-tagWidth / 2, badgeY - 14, tagWidth, 22, 10);
+        ctx.fill();
+        ctx.stroke();
+
+        ctx.fillStyle = '#ffffff';
+        ctx.fillText(tagText, 0, badgeY + 1);
+      } else {
+        // Green Saved Badge
+        const tagText = `✅ Đã Giải Cứu!`;
+        const tagWidth = ctx.measureText(tagText).width + 14;
+        ctx.fillStyle = 'rgba(6, 78, 59, 0.85)';
+        ctx.strokeStyle = '#34d399';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.roundRect(-tagWidth / 2, badgeY - 12, tagWidth, 20, 8);
+        ctx.fill();
+        ctx.stroke();
+
+        ctx.fillStyle = '#a7f3d0';
+        ctx.fillText(tagText, 0, badgeY + 1);
+      }
+
+      ctx.restore();
+    }
+    ctx.restore();
+  };
+
   const drawWeatherAndLighting = (
     ctx: CanvasRenderingContext2D,
     width: number,
@@ -2050,9 +3493,44 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
     } else if (wType === 'afternoon') {
       ctx.fillStyle = 'rgba(245, 158, 11, 0.16)';
       ctx.fillRect(camX, camY, width, height);
-    } else if (wType === 'rainy') {
-      ctx.fillStyle = 'rgba(30, 41, 59, 0.28)';
+    } else if (wType === 'rainy' || wType === 'rain') {
+      // 1. Atmospheric rainy overcast tint
+      ctx.fillStyle = 'rgba(23, 37, 56, 0.32)';
       ctx.fillRect(camX, camY, width, height);
+
+      // 2. Soft moving rain mist layers
+      const mistOffset = (Date.now() * 0.02) % width;
+      const mistGrad = ctx.createLinearGradient(camX, camY, camX + width, camY + height);
+      mistGrad.addColorStop(0, 'rgba(186, 230, 253, 0.04)');
+      mistGrad.addColorStop(0.5, 'rgba(147, 197, 253, 0.08)');
+      mistGrad.addColorStop(1, 'rgba(186, 230, 253, 0.03)');
+      ctx.fillStyle = mistGrad;
+      ctx.fillRect(camX, camY, width, height);
+
+      // 3. Ground Rain Puddle Ripples
+      ctx.lineWidth = 1.2;
+      for (const rip of rainRipplesRef.current) {
+        ctx.strokeStyle = `rgba(186, 230, 253, ${rip.alpha})`;
+        ctx.beginPath();
+        ctx.ellipse(rip.x, rip.y, rip.radius, rip.radius * 0.5, 0, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+
+      // 4. Falling Raindrop Particles (Streaks across screen)
+      for (const drop of rainDropsRef.current) {
+        ctx.lineWidth = drop.width;
+        ctx.strokeStyle = `rgba(224, 242, 254, ${drop.opacity})`;
+        ctx.beginPath();
+        ctx.moveTo(drop.x, drop.y);
+        ctx.lineTo(drop.x + drop.vx * 0.85, drop.y - drop.length);
+        ctx.stroke();
+      }
+
+      // 5. Ambient Lightning Flash
+      if (lightningFlashRef.current.alpha > 0) {
+        ctx.fillStyle = `rgba(240, 249, 255, ${lightningFlashRef.current.alpha})`;
+        ctx.fillRect(camX, camY, width, height);
+      }
     } else if (wType === 'sunny') {
       ctx.fillStyle = 'rgba(254, 240, 138, 0.05)';
       ctx.beginPath();

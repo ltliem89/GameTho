@@ -1,5 +1,7 @@
+import { WeatherType } from '../types';
+
 /**
- * Procedural Web Audio synthesizer for cute game sounds and peaceful forest music.
+ * Procedural Web Audio synthesizer for cute game sounds, looping rain ambience, and peaceful forest music.
  */
 
 class SoundSystem {
@@ -9,6 +11,14 @@ class SoundSystem {
   private musicInterval: number | null = null;
   private isInitialized = false;
 
+  // Looping Rain Ambience Nodes
+  private rainNoiseSource: AudioBufferSourceNode | null = null;
+  private rainGainNode: GainNode | null = null;
+  private rainFilterNode: BiquadFilterNode | null = null;
+  private rainDropletsInterval: number | null = null;
+  private isRainActive: boolean = false;
+  private currentWeather: WeatherType = 'sunny';
+
   public init() {
     if (this.isInitialized && this.ctx) return;
     try {
@@ -17,6 +27,9 @@ class SoundSystem {
       this.isInitialized = true;
       if (this.musicEnabled) {
         this.startBGM();
+      }
+      if (this.soundEnabled && (this.currentWeather === 'rainy' || this.currentWeather === 'rain')) {
+        this.startRainSound();
       }
     } catch {
       // Audio context might fail or be blocked by autoplay policies until user gesture
@@ -265,6 +278,17 @@ class SoundSystem {
         gain.connect(this.ctx.destination);
         osc.start(now);
         osc.stop(now + 0.3);
+      } else if (type === 'crocodile') {
+        // Deep friendly crocodile water-growl & bubble
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(110, now);
+        osc.frequency.exponentialRampToValueAtTime(65, now + 0.22);
+        gain.gain.setValueAtTime(0.14, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.25);
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+        osc.start(now);
+        osc.stop(now + 0.25);
       } else {
         // Chirp sound
         this.playChirp();
@@ -476,6 +500,74 @@ class SoundSystem {
     }
   }
 
+  public playRescueSuccess() {
+    if (!this.soundEnabled) return;
+    this.ensureContext();
+    if (!this.ctx) return;
+
+    try {
+      // Joyful triumphant rescue fanfare
+      const notes = [523.25, 659.25, 783.99, 1046.50, 1318.51]; // C5, E5, G5, C6, E6
+      notes.forEach((freq, idx) => {
+        const now = this.ctx!.currentTime + idx * 0.09;
+        const osc = this.ctx!.createOscillator();
+        const gain = this.ctx!.createGain();
+
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(freq, now);
+
+        gain.gain.setValueAtTime(0.2, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.4);
+
+        osc.connect(gain);
+        gain.connect(this.ctx!.destination);
+
+        osc.start(now);
+        osc.stop(now + 0.4);
+      });
+    } catch {
+      // ignore
+    }
+  }
+
+  public playExtinguishFire() {
+    if (!this.soundEnabled) return;
+    this.ensureContext();
+    if (!this.ctx) return;
+
+    try {
+      const now = this.ctx.currentTime;
+      // White noise sizzle for steam & water hiss
+      const bufferSize = this.ctx.sampleRate * 0.35;
+      const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+      const data = buffer.getChannelData(0);
+      for (let i = 0; i < bufferSize; i++) {
+        data[i] = Math.random() * 2 - 1;
+      }
+
+      const noise = this.ctx.createBufferSource();
+      noise.buffer = buffer;
+
+      const filter = this.ctx.createBiquadFilter();
+      filter.type = 'bandpass';
+      filter.frequency.setValueAtTime(1200, now);
+      filter.frequency.exponentialRampToValueAtTime(300, now + 0.35);
+
+      const gain = this.ctx.createGain();
+      gain.gain.setValueAtTime(0.25, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.35);
+
+      noise.connect(filter);
+      filter.connect(gain);
+      gain.connect(this.ctx.destination);
+
+      noise.start(now);
+      noise.stop(now + 0.35);
+    } catch {
+      // ignore
+    }
+  }
+
   public playBridgeStep() {
     if (!this.soundEnabled) return;
     this.ensureContext();
@@ -544,8 +636,152 @@ class SoundSystem {
     }
   }
 
+  public startRainSound() {
+    if (this.isRainActive) return;
+    if (!this.soundEnabled) {
+      this.isRainActive = true;
+      return;
+    }
+    this.ensureContext();
+    if (!this.ctx) {
+      this.isRainActive = true;
+      return;
+    }
+
+    try {
+      const now = this.ctx.currentTime;
+      // 1. Generate procedural pink/brown rain ambient noise buffer
+      const sampleRate = this.ctx.sampleRate;
+      const bufferLength = sampleRate * 3.5;
+      const buffer = this.ctx.createBuffer(1, bufferLength, sampleRate);
+      const data = buffer.getChannelData(0);
+
+      // Pink noise filter algorithm (Paul Kellet's filter method)
+      let b0 = 0, b1 = 0, b2 = 0, b3 = 0, b4 = 0, b5 = 0, b6 = 0;
+      for (let i = 0; i < bufferLength; i++) {
+        const white = Math.random() * 2 - 1;
+        b0 = 0.99886 * b0 + white * 0.0555179;
+        b1 = 0.99332 * b1 + white * 0.0750759;
+        b2 = 0.96900 * b2 + white * 0.1538520;
+        b3 = 0.86650 * b3 + white * 0.3104856;
+        b4 = 0.55000 * b4 + white * 0.5329522;
+        b5 = -0.7616 * b5 - white * 0.0168980;
+        const pink = b0 + b1 + b2 + b3 + b4 + b5 + b6 + white * 0.5362;
+        b6 = white * 0.115926;
+        data[i] = pink * 0.11;
+      }
+
+      const noiseSource = this.ctx.createBufferSource();
+      noiseSource.buffer = buffer;
+      noiseSource.loop = true;
+
+      // Filter to simulate soft raindrops patter
+      const filter = this.ctx.createBiquadFilter();
+      filter.type = 'lowpass';
+      filter.frequency.setValueAtTime(1100, now);
+      filter.Q.setValueAtTime(0.7, now);
+
+      const gain = this.ctx.createGain();
+      gain.gain.setValueAtTime(0.001, now);
+      gain.gain.linearRampToValueAtTime(0.08, now + 0.6);
+
+      noiseSource.connect(filter);
+      filter.connect(gain);
+      gain.connect(this.ctx.destination);
+
+      noiseSource.start(now);
+
+      this.rainNoiseSource = noiseSource;
+      this.rainFilterNode = filter;
+      this.rainGainNode = gain;
+      this.isRainActive = true;
+
+      // 2. Continuous random soft raindrop pitter-patter plops
+      if (this.rainDropletsInterval) {
+        clearInterval(this.rainDropletsInterval);
+      }
+      this.rainDropletsInterval = window.setInterval(() => {
+        if (!this.soundEnabled || !this.ctx || this.ctx.state !== 'running' || !this.isRainActive) return;
+        try {
+          const dropTime = this.ctx.currentTime;
+          const dropOsc = this.ctx.createOscillator();
+          const dropGain = this.ctx.createGain();
+
+          dropOsc.type = 'sine';
+          const dropFreq = 1600 + Math.random() * 1600;
+          dropOsc.frequency.setValueAtTime(dropFreq, dropTime);
+          dropOsc.frequency.exponentialRampToValueAtTime(dropFreq * 0.5, dropTime + 0.035);
+
+          const dropVol = 0.015 + Math.random() * 0.025;
+          dropGain.gain.setValueAtTime(dropVol, dropTime);
+          dropGain.gain.exponentialRampToValueAtTime(0.0001, dropTime + 0.035);
+
+          dropOsc.connect(dropGain);
+          dropGain.connect(this.ctx.destination);
+
+          dropOsc.start(dropTime);
+          dropOsc.stop(dropTime + 0.035);
+        } catch {
+          // ignore
+        }
+      }, 140);
+    } catch {
+      // Audio context might be restricted
+    }
+  }
+
+  public stopRainSound() {
+    if (this.rainDropletsInterval) {
+      clearInterval(this.rainDropletsInterval);
+      this.rainDropletsInterval = null;
+    }
+
+    if (this.rainGainNode && this.ctx) {
+      try {
+        const now = this.ctx.currentTime;
+        this.rainGainNode.gain.cancelScheduledValues(now);
+        this.rainGainNode.gain.setValueAtTime(this.rainGainNode.gain.value, now);
+        this.rainGainNode.gain.exponentialRampToValueAtTime(0.0001, now + 0.35);
+
+        const oldSource = this.rainNoiseSource;
+        const oldGain = this.rainGainNode;
+        setTimeout(() => {
+          try {
+            oldSource?.stop();
+            oldSource?.disconnect();
+            oldGain?.disconnect();
+          } catch {
+            // ignore
+          }
+        }, 400);
+      } catch {
+        // ignore
+      }
+    }
+
+    this.rainNoiseSource = null;
+    this.rainFilterNode = null;
+    this.rainGainNode = null;
+    this.isRainActive = false;
+  }
+
+  public setWeather(weather: WeatherType) {
+    this.currentWeather = weather;
+    if (weather === 'rainy' || weather === 'rain') {
+      this.startRainSound();
+    } else {
+      this.stopRainSound();
+    }
+  }
+
   public toggleSound(): boolean {
     this.soundEnabled = !this.soundEnabled;
+    if (!this.soundEnabled) {
+      this.stopRainSound();
+    } else if (this.currentWeather === 'rainy' || this.currentWeather === 'rain') {
+      this.ensureContext();
+      this.startRainSound();
+    }
     return this.soundEnabled;
   }
 

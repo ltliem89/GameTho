@@ -104,9 +104,9 @@ export const TouchControls: React.FC<TouchControlsProps> = ({ onVectorChange, on
   };
 
   return (
-    <div id="touch-controls-container" className="pointer-events-none fixed inset-x-0 bottom-6 z-20 flex justify-between items-end px-6 md:px-12">
+    <div id="touch-controls-container" className="pointer-events-none fixed inset-x-0 bottom-4 sm:bottom-6 z-20 flex justify-between items-end px-4 sm:px-8 md:px-12 select-none touch-none">
       {/* Left side: Analog Joypad + DPad */}
-      <div className="pointer-events-auto flex items-center gap-4">
+      <div className="pointer-events-auto flex items-center gap-3 sm:gap-4">
         {/* Virtual Joystick for fluid walking */}
         <div
           ref={joystickBaseRef}
@@ -115,27 +115,27 @@ export const TouchControls: React.FC<TouchControlsProps> = ({ onVectorChange, on
           onTouchMove={handleJoystickTouchMove}
           onTouchEnd={handleJoystickTouchEnd}
           onTouchCancel={handleJoystickTouchEnd}
-          className="relative w-28 h-28 rounded-full bg-slate-900/75 backdrop-blur-lg border-2 border-emerald-400/30 shadow-[0_8px_32px_rgba(0,0,0,0.5),inset_0_2px_8px_rgba(16,185,129,0.15)] flex items-center justify-center select-none touch-none"
+          className="relative w-22 h-22 sm:w-28 sm:h-28 rounded-full bg-slate-900/70 backdrop-blur-lg border-2 border-emerald-400/30 shadow-[0_4px_20px_rgba(0,0,0,0.5),inset_0_2px_6px_rgba(16,185,129,0.15)] flex items-center justify-center select-none touch-none"
         >
-          <div className="absolute w-12 h-12 rounded-full border border-emerald-400/20" />
+          <div className="absolute w-9 h-9 sm:w-12 sm:h-12 rounded-full border border-emerald-400/20" />
           <div
             id="virtual-joystick-knob"
             style={{
               transform: `translate(${knobPos.x}px, ${knobPos.y}px)`,
               transition: isJoystickActive ? 'none' : 'transform 0.15s ease-out',
             }}
-            className={`w-13 h-13 rounded-full shadow-2xl flex items-center justify-center transition-all ${
+            className={`w-10 h-10 sm:w-13 sm:h-13 rounded-full shadow-xl flex items-center justify-center transition-all ${
               isJoystickActive
-                ? 'bg-gradient-to-tr from-amber-500 to-amber-300 text-amber-950 scale-110 shadow-[0_0_20px_rgba(245,158,11,0.6)] border-2 border-amber-200'
+                ? 'bg-gradient-to-tr from-amber-500 to-amber-300 text-amber-950 scale-105 shadow-[0_0_16px_rgba(245,158,11,0.6)] border-2 border-amber-200'
                 : 'bg-white/90 text-slate-800 border-2 border-white/40'
             }`}
           >
-            <span className="text-base font-extrabold">🐰</span>
+            <span className="text-sm sm:text-base font-extrabold">🐰</span>
           </div>
         </div>
 
-        {/* Small D-Pad for discrete click controls */}
-        <div id="dpad-buttons" className="hidden sm:grid grid-cols-3 gap-1.5 p-2.5 rounded-2xl bg-slate-900/75 backdrop-blur-lg border border-white/20 shadow-xl">
+        {/* Small D-Pad for discrete click controls on larger screens */}
+        <div id="dpad-buttons" className="hidden md:grid grid-cols-3 gap-1.5 p-2.5 rounded-2xl bg-slate-900/75 backdrop-blur-lg border border-white/20 shadow-xl">
           <div />
           <button
             id="btn-dpad-up"
@@ -209,7 +209,7 @@ export const TouchControls: React.FC<TouchControlsProps> = ({ onVectorChange, on
       </div>
 
       {/* Right side: Action Jump Button */}
-      <div className="pointer-events-auto flex items-center gap-3">
+      <div className="pointer-events-auto flex items-center gap-2 sm:gap-3">
         <button
           id="btn-jump-action"
           onClick={onJump}
@@ -217,11 +217,11 @@ export const TouchControls: React.FC<TouchControlsProps> = ({ onVectorChange, on
             e.stopPropagation();
             onJump();
           }}
-          className="w-20 h-20 sm:w-22 sm:h-22 rounded-full bg-gradient-to-tr from-amber-500 via-yellow-400 to-amber-300 text-amber-950 font-black flex flex-col items-center justify-center shadow-[0_8px_30px_rgba(245,158,11,0.5)] active:scale-90 transition-transform border-3 border-amber-100 hover:shadow-[0_8px_35px_rgba(245,158,11,0.7)]"
+          className="w-16 h-16 sm:w-22 sm:h-22 rounded-full bg-gradient-to-tr from-amber-500 via-yellow-400 to-amber-300 text-amber-950 font-black flex flex-col items-center justify-center shadow-[0_6px_20px_rgba(245,158,11,0.45)] sm:shadow-[0_8px_30px_rgba(245,158,11,0.5)] active:scale-90 transition-transform border-2 sm:border-3 border-amber-100 hover:shadow-[0_8px_35px_rgba(245,158,11,0.7)] select-none touch-none"
           aria-label="Nhảy lò cò"
         >
-          <Sparkles className="w-7 h-7 animate-pulse text-amber-900" />
-          <span className="text-xs tracking-widest uppercase font-black mt-0.5">Nhảy</span>
+          <Sparkles className="w-6 h-6 sm:w-7 sm:h-7 animate-pulse text-amber-900" />
+          <span className="hidden sm:inline text-xs tracking-widest uppercase font-black mt-0.5">Nhảy</span>
         </button>
       </div>
     </div>

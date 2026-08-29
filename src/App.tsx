@@ -8,7 +8,19 @@ import { AnimalDialogueModal } from './components/AnimalDialogueModal';
 import { HelpModal } from './components/HelpModal';
 import { BunnyUpgradesModal } from './components/BunnyUpgradesModal';
 import { QuestsModal } from './components/QuestsModal';
-import { BunnyAccessory, BunnySkin, BunnyUpgrades, DiscoveryStats, ForestAnimal, Quest, WeatherType } from './types';
+import { AchievementsModal } from './components/AchievementsModal';
+import { RescueDialogueModal } from './components/RescueDialogueModal';
+import {
+  BunnyAccessory,
+  BunnySkin,
+  BunnyUpgrades,
+  DiscoveryStats,
+  EnvironmentalRescue,
+  ForestAnimal,
+  Quest,
+  WeatherType,
+} from './types';
+import { getInitialAchievements, getInitialRescues } from './utils/forestWorld';
 import { sounds } from './utils/audio';
 import { Sparkles, ArrowRight } from 'lucide-react';
 
@@ -51,6 +63,20 @@ const INITIAL_QUESTS: Quest[] = [
     rewardAccessory: 'red_ribbon',
   },
   {
+    id: 'quest_eco_hero',
+    titleVi: 'Hiệp Sĩ Giải Cứu Môi Trường',
+    descVi: 'Hoàn thành ít nhất 2 nhiệm vụ giải cứu muôn thú và dọn sạch rừng xanh.',
+    icon: '🛡️',
+    category: 'animal',
+    targetCount: 2,
+    currentCount: 0,
+    completed: false,
+    rewardClaimed: false,
+    rewardTextVi: '+50 Cà rốt & Vòng Nguyệt Quế Rừng Xanh 🌿',
+    rewardCarrots: 50,
+    rewardAccessory: 'rainbow_wreath',
+  },
+  {
     id: 'quest_clover_1',
     titleVi: 'Cỏ 4 Lá May Mắn',
     descVi: 'Tìm thấy 2 nhánh cỏ 4 lá huyền bí giữa rừng sâu.',
@@ -60,9 +86,9 @@ const INITIAL_QUESTS: Quest[] = [
     currentCount: 0,
     completed: false,
     rewardClaimed: false,
-    rewardTextVi: '+20 Cà rốt & Vòng Hoa Cầu Vồng 🌈',
+    rewardTextVi: '+20 Cà rốt & Vương Miện Hoàng Gia 👑',
     rewardCarrots: 20,
-    rewardAccessory: 'rainbow_wreath',
+    rewardAccessory: 'crown',
   },
   {
     id: 'quest_animals_1',
@@ -136,18 +162,27 @@ export default function App() {
     berries: 0,
     clovers: 0,
     goldenCarrots: 0,
+    apples: 0,
+    witheredPlantsRevived: 0,
+    rescuesCompleted: [],
+    ecoScore: 0,
+    xp: 0,
+    playerLevel: 1,
     animalsTalked: [],
     burrowsFound: 0,
     areasVisited: ['Thảm Cỏ Nhà Thỏ'],
+    bridgesCrossed: [],
     stepsCount: 0,
     hazardsAvoidedOrHit: 0,
     questsCompletedCount: 0,
     unlockedSkins: ['white', 'caramel', 'pink', 'spotted', 'shadow'],
     unlockedAccessories: ['none', 'flower', 'red_ribbon', 'crown'],
     upgrades: INITIAL_UPGRADES,
+    achievements: getInitialAchievements(),
   });
 
   const [quests, setQuests] = useState<Quest[]>(INITIAL_QUESTS);
+  const [rescues, setRescues] = useState<EnvironmentalRescue[]>(getInitialRescues());
 
   // Audio state
   const [soundActive, setSoundActive] = useState<boolean>(true);
@@ -159,7 +194,9 @@ export default function App() {
   const [isHelpOpen, setIsHelpOpen] = useState<boolean>(false);
   const [isUpgradesOpen, setIsUpgradesOpen] = useState<boolean>(false);
   const [isQuestsOpen, setIsQuestsOpen] = useState<boolean>(false);
+  const [isAchievementsOpen, setIsAchievementsOpen] = useState<boolean>(false);
   const [selectedAnimal, setSelectedAnimal] = useState<ForestAnimal | null>(null);
+  const [selectedRescue, setSelectedRescue] = useState<EnvironmentalRescue | null>(null);
 
   // Virtual Joypad & Jump controls
   const [joystickVector, setJoystickVector] = useState<{ x: number; y: number } | null>(null);
@@ -187,6 +224,8 @@ export default function App() {
           currentCount = stats.goldenCarrots;
         } else if (quest.id === 'quest_burrow_secret') {
           currentCount = stats.burrowsFound;
+        } else if (quest.id === 'quest_eco_hero') {
+          currentCount = (stats.rescuesCompleted || []).length;
         }
 
         const isCompleted = currentCount >= quest.targetCount;
@@ -218,6 +257,11 @@ export default function App() {
       window.removeEventListener('touchstart', handleFirstGesture);
     };
   }, []);
+
+  // Synchronize Weather & Rain Ambient Audio
+  useEffect(() => {
+    sounds.setWeather(weather);
+  }, [weather, soundActive]);
 
   const handleToggleSound = () => {
     const nextState = sounds.toggleSound();
@@ -295,6 +339,33 @@ export default function App() {
     });
   };
 
+  // Rescue completion handler
+  const handleCompleteRescue = (completedRescue: EnvironmentalRescue) => {
+    setRescues((prev) =>
+      prev.map((r) => (r.id === completedRescue.id ? { ...r, status: 'saved', progress: 100 } : r))
+    );
+
+    setStats((prev) => {
+      const alreadySaved = prev.rescuesCompleted?.includes(completedRescue.id);
+      if (alreadySaved) return prev;
+
+      const newRescuesCompleted = [...(prev.rescuesCompleted || []), completedRescue.id];
+      const newEcoScore = (prev.ecoScore || 0) + 25;
+      const newCarrots = prev.carrots + completedRescue.rewardCarrots;
+      const newXp = (prev.xp || 0) + completedRescue.rewardXp;
+      const newPlayerLevel = Math.min(5, Math.floor(newXp / 100) + 1);
+
+      return {
+        ...prev,
+        carrots: newCarrots,
+        xp: newXp,
+        playerLevel: newPlayerLevel,
+        rescuesCompleted: newRescuesCompleted,
+        ecoScore: newEcoScore,
+      };
+    });
+  };
+
   const readyQuestsCount = quests.filter((q) => q.completed && !q.rewardClaimed).length;
 
   return (
@@ -318,6 +389,7 @@ export default function App() {
         onOpenMap={() => setIsMapOpen(true)}
         onOpenQuests={() => setIsQuestsOpen(true)}
         onOpenUpgrades={() => setIsUpgradesOpen(true)}
+        onOpenAchievements={() => setIsAchievementsOpen(true)}
         readyQuestsCount={readyQuestsCount}
         onOpenHelp={() => setIsHelpOpen(true)}
       />
@@ -330,9 +402,11 @@ export default function App() {
           bunnyAccessory={bunnyAccessory}
           speedMultiplier={speedMultiplier}
           upgrades={stats.upgrades}
+          rescues={rescues}
           onStatsUpdate={setStats}
           onZoneChange={setCurrentZone}
           onAnimalInteract={setSelectedAnimal}
+          onRescueInteract={setSelectedRescue}
           joystickVector={joystickVector}
           onJumpTriggered={handleJumpAction}
           jumpSignal={jumpSignal}
@@ -349,17 +423,17 @@ export default function App() {
       {showWelcome && (
         <div
           id="welcome-greeting-banner"
-          className="fixed bottom-24 left-1/2 -translate-x-1/2 z-30 pointer-events-auto max-w-sm sm:max-w-md w-[92%] bg-slate-900/95 backdrop-blur-xl border-2 border-emerald-400/50 rounded-3xl p-4.5 shadow-[0_15px_40px_rgba(0,0,0,0.8),0_0_30px_rgba(16,185,129,0.25)] animate-bounce"
+          className="fixed bottom-20 sm:bottom-24 left-1/2 -translate-x-1/2 z-30 pointer-events-auto max-w-sm sm:max-w-md w-[92%] bg-slate-900/95 backdrop-blur-xl border-2 border-emerald-400/50 rounded-2xl sm:rounded-3xl p-3 sm:p-4.5 shadow-[0_15px_40px_rgba(0,0,0,0.8),0_0_30px_rgba(16,185,129,0.25)] animate-bounce select-none"
         >
-          <div className="flex items-center gap-3.5">
-            <span className="text-3xl sm:text-4xl filter drop-shadow-md">🐰</span>
-            <div className="flex-1">
-              <h1 className="text-sm font-black text-white flex items-center gap-1.5">
-                <span>Đi rừng cùng Chú Thỏ nào!</span>
-                <Sparkles className="w-3.5 h-3.5 text-amber-400 fill-current animate-pulse" />
+          <div className="flex items-center gap-2.5 sm:gap-3.5">
+            <span className="text-2xl sm:text-4xl filter drop-shadow-md">🐰</span>
+            <div className="flex-1 min-w-0">
+              <h1 className="text-xs sm:text-sm font-black text-white flex items-center gap-1.5">
+                <span>Đi rừng cùng Chú Thỏ!</span>
+                <Sparkles className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-amber-400 fill-current animate-pulse" />
               </h1>
-              <p className="text-xs text-slate-200 mt-1 leading-snug font-medium">
-                Dùng phím <strong className="text-amber-300">Mũi tên / WASD</strong>, cần xoay cảm ứng hoặc <strong className="text-emerald-300">nhấn chuột</strong> vào bãi cỏ để dẫn chú thỏ đi dạo khắp khu rừng nhé!
+              <p className="text-[11px] sm:text-xs text-slate-200 mt-0.5 sm:mt-1 leading-snug font-medium line-clamp-2 sm:line-clamp-none">
+                Dùng <strong className="text-amber-300">cần xoay ảo / chạm cỏ</strong> hoặc phím <strong className="text-emerald-300">WASD / Mũi tên</strong> để dạo chơi khắp khu rừng nhé!
               </p>
             </div>
             <button
@@ -367,9 +441,9 @@ export default function App() {
                 sounds.playMunch();
                 setShowWelcome(false);
               }}
-              className="px-3.5 py-2 rounded-2xl bg-gradient-to-r from-emerald-500 via-teal-400 to-emerald-400 hover:from-emerald-400 hover:to-teal-300 text-emerald-950 font-black text-xs shadow-lg transition-all active:scale-95 flex items-center gap-1 border border-emerald-200/50 whitespace-nowrap"
+              className="px-2.5 sm:px-3.5 py-1.5 sm:py-2 rounded-xl sm:rounded-2xl bg-gradient-to-r from-emerald-500 via-teal-400 to-emerald-400 hover:from-emerald-400 hover:to-teal-300 text-emerald-950 font-black text-[11px] sm:text-xs shadow-lg transition-all active:scale-95 flex items-center gap-1 border border-emerald-200/50 whitespace-nowrap"
             >
-              Chơi ngay <ArrowRight className="w-3.5 h-3.5" />
+              Chơi ngay <ArrowRight className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
             </button>
           </div>
         </div>
@@ -412,6 +486,19 @@ export default function App() {
           setIsQuestsOpen(false);
           setIsWardrobeOpen(true);
         }}
+      />
+
+      <AchievementsModal
+        isOpen={isAchievementsOpen}
+        onClose={() => setIsAchievementsOpen(false)}
+        achievements={stats.achievements || getInitialAchievements()}
+        totalScore={stats.score || stats.carrots * 10}
+      />
+
+      <RescueDialogueModal
+        rescue={selectedRescue}
+        onClose={() => setSelectedRescue(null)}
+        onCompleteRescue={handleCompleteRescue}
       />
 
       <AnimalDialogueModal
