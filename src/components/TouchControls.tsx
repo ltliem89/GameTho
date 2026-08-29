@@ -1,12 +1,20 @@
 import React, { useRef, useState, useCallback } from 'react';
 import { ArrowUp, ArrowDown, ArrowLeft, ArrowRight, Sparkles } from 'lucide-react';
+import { CharacterType } from '../types';
 
 interface TouchControlsProps {
   onVectorChange: (vector: { x: number; y: number } | null) => void;
   onJump: () => void;
+  characterType?: CharacterType;
+  isClimbing?: boolean;
 }
 
-export const TouchControls: React.FC<TouchControlsProps> = ({ onVectorChange, onJump }) => {
+export const TouchControls: React.FC<TouchControlsProps> = ({
+  onVectorChange,
+  onJump,
+  characterType = 'bunny',
+  isClimbing = false,
+}) => {
   const [activeKey, setActiveKey] = useState<string | null>(null);
   const activeTouchId = useRef<number | null>(null);
   const joystickBaseRef = useRef<HTMLDivElement | null>(null);
@@ -130,7 +138,7 @@ export const TouchControls: React.FC<TouchControlsProps> = ({ onVectorChange, on
                 : 'bg-white/90 text-slate-800 border-2 border-white/40'
             }`}
           >
-            <span className="text-sm sm:text-base font-extrabold">🐰</span>
+            <span className="text-sm sm:text-base font-extrabold">{characterType === 'squirrel' ? '🐿️' : '🐰'}</span>
           </div>
         </div>
 

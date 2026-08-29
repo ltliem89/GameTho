@@ -14,10 +14,12 @@ import {
   BunnyAccessory,
   BunnySkin,
   BunnyUpgrades,
+  CharacterType,
   DiscoveryStats,
   EnvironmentalRescue,
   ForestAnimal,
   Quest,
+  SquirrelSkin,
   WeatherType,
 } from './types';
 import { getInitialAchievements, getInitialRescues } from './utils/forestWorld';
@@ -151,7 +153,9 @@ const INITIAL_QUESTS: Quest[] = [
 
 export default function App() {
   const [weather, setWeather] = useState<WeatherType>('sunny');
+  const [characterType, setCharacterType] = useState<CharacterType>('bunny');
   const [bunnySkin, setBunnySkin] = useState<BunnySkin>('white');
+  const [squirrelSkin, setSquirrelSkin] = useState<SquirrelSkin>('chestnut');
   const [bunnyAccessory, setBunnyAccessory] = useState<BunnyAccessory>('flower');
   const [speedMultiplier, setSpeedMultiplier] = useState<number>(1);
   const [currentZone, setCurrentZone] = useState<string>('Thảm Cỏ Nhà Thỏ');
@@ -163,6 +167,10 @@ export default function App() {
     clovers: 0,
     goldenCarrots: 0,
     apples: 0,
+    acorns: 0,
+    treesClimbed: 0,
+    vinesTraversed: 0,
+    characterType: 'bunny',
     witheredPlantsRevived: 0,
     rescuesCompleted: [],
     ecoScore: 0,
@@ -176,6 +184,7 @@ export default function App() {
     hazardsAvoidedOrHit: 0,
     questsCompletedCount: 0,
     unlockedSkins: ['white', 'caramel', 'pink', 'spotted', 'shadow'],
+    unlockedSquirrelSkins: ['chestnut', 'red_fur', 'golden_autumn', 'silver_frost', 'shadow_night'],
     unlockedAccessories: ['none', 'flower', 'red_ribbon', 'crown'],
     upgrades: INITIAL_UPGRADES,
     achievements: getInitialAchievements(),
@@ -378,6 +387,7 @@ export default function App() {
         onWeatherChange={(w) => {
           sounds.playChirp();
           setWeather(w);
+          sounds.setWeather(w);
         }}
         soundActive={soundActive}
         musicActive={musicActive}
@@ -398,7 +408,9 @@ export default function App() {
       <main className="w-full h-full">
         <GameCanvas
           weather={weather}
+          characterType={characterType}
           bunnySkin={bunnySkin}
+          squirrelSkin={squirrelSkin}
           bunnyAccessory={bunnyAccessory}
           speedMultiplier={speedMultiplier}
           upgrades={stats.upgrades}
@@ -415,6 +427,7 @@ export default function App() {
 
       {/* 3. On-Screen Touch / Joystick & Jump Controls */}
       <TouchControls
+        characterType={characterType}
         onVectorChange={setJoystickVector}
         onJump={handleJumpAction}
       />
@@ -426,14 +439,14 @@ export default function App() {
           className="fixed bottom-20 sm:bottom-24 left-1/2 -translate-x-1/2 z-30 pointer-events-auto max-w-sm sm:max-w-md w-[92%] bg-slate-900/95 backdrop-blur-xl border-2 border-emerald-400/50 rounded-2xl sm:rounded-3xl p-3 sm:p-4.5 shadow-[0_15px_40px_rgba(0,0,0,0.8),0_0_30px_rgba(16,185,129,0.25)] animate-bounce select-none"
         >
           <div className="flex items-center gap-2.5 sm:gap-3.5">
-            <span className="text-2xl sm:text-4xl filter drop-shadow-md">🐰</span>
+            <span className="text-2xl sm:text-4xl filter drop-shadow-md">{characterType === 'squirrel' ? '🐿️' : '🐰'}</span>
             <div className="flex-1 min-w-0">
               <h1 className="text-xs sm:text-sm font-black text-white flex items-center gap-1.5">
-                <span>Đi rừng cùng Chú Thỏ!</span>
+                <span>{characterType === 'squirrel' ? 'Dạo chơi cùng Bé Sóc Tinh Nghịch!' : 'Đi rừng cùng Chú Thỏ!'}</span>
                 <Sparkles className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-amber-400 fill-current animate-pulse" />
               </h1>
               <p className="text-[11px] sm:text-xs text-slate-200 mt-0.5 sm:mt-1 leading-snug font-medium line-clamp-2 sm:line-clamp-none">
-                Dùng <strong className="text-amber-300">cần xoay ảo / chạm cỏ</strong> hoặc phím <strong className="text-emerald-300">WASD / Mũi tên</strong> để dạo chơi khắp khu rừng nhé!
+                Dùng <strong className="text-amber-300">cần xoay ảo / chạm cỏ</strong> hoặc phím <strong className="text-emerald-300">WASD / Mũi tên</strong> để dạo chơi, leo cây và hái quả nhé!
               </p>
             </div>
             <button
@@ -453,11 +466,23 @@ export default function App() {
       <BunnyWardrobeModal
         isOpen={isWardrobeOpen}
         onClose={() => setIsWardrobeOpen(false)}
-        currentSkin={bunnySkin}
+        characterType={characterType}
+        onSelectCharacter={(type) => {
+          setCharacterType(type);
+          setStats((prev) => ({ ...prev, characterType: type }));
+        }}
+        currentSkin={characterType === 'squirrel' ? squirrelSkin : bunnySkin}
         currentAccessory={bunnyAccessory}
         unlockedSkins={stats.unlockedSkins}
+        unlockedSquirrelSkins={stats.unlockedSquirrelSkins}
         unlockedAccessories={stats.unlockedAccessories}
-        onSelectSkin={setBunnySkin}
+        onSelectSkin={(skin) => {
+          if (characterType === 'squirrel') {
+            setSquirrelSkin(skin as SquirrelSkin);
+          } else {
+            setBunnySkin(skin as BunnySkin);
+          }
+        }}
         onSelectAccessory={setBunnyAccessory}
       />
 

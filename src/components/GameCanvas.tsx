@@ -3,12 +3,15 @@ import {
   BunnyAccessory,
   BunnyEntity,
   BunnySkin,
+  CharacterType,
   CollectibleItem,
   DiscoveryStats,
   Footstep,
   ForestAnimal,
   ForestDecor,
+  ForestVine,
   Particle,
+  SquirrelSkin,
   WeatherType,
   BunnyUpgrades,
   EnvironmentalRescue,
@@ -31,6 +34,8 @@ import { sounds } from '../utils/audio';
 interface GameCanvasProps {
   weather: WeatherType;
   bunnySkin: BunnySkin;
+  squirrelSkin?: SquirrelSkin;
+  characterType?: CharacterType;
   bunnyAccessory: BunnyAccessory;
   speedMultiplier: number;
   upgrades?: BunnyUpgrades;
@@ -87,7 +92,9 @@ const DEFAULT_UPGRADES: BunnyUpgrades = {
 
 export const GameCanvas: React.FC<GameCanvasProps> = ({
   weather,
+  characterType = 'bunny',
   bunnySkin,
+  squirrelSkin = 'chestnut',
   bunnyAccessory,
   speedMultiplier,
   upgrades = DEFAULT_UPGRADES,
@@ -113,11 +120,18 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
     hopPhase: 0,
     jumpHeight: 0,
     isJumping: false,
-    skin: bunnySkin,
+    characterType,
+    skin: characterType === 'squirrel' ? squirrelSkin : bunnySkin,
     accessory: bunnyAccessory,
     carrotsEaten: 0,
     cloversFound: 0,
     berriesPicked: 0,
+    acornsEaten: 0,
+    applesEaten: 0,
+    hurtTimer: 0,
+    shieldTimer: 0,
+    auraPhase: 0,
+    isClimbing: false,
   });
 
   const keysPressed = useRef<{ [key: string]: boolean }>({});
@@ -125,6 +139,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
 
   const decorsRef = useRef<ForestDecor[]>([]);
   const collectiblesRef = useRef<CollectibleItem[]>([]);
+  const vinesRef = useRef<ForestVine[]>([]);
   const animalsRef = useRef<ForestAnimal[]>([]);
   const rescuesRef = useRef<EnvironmentalRescue[]>(rescues || getInitialRescues());
   const particlesRef = useRef<Particle[]>([]);
@@ -142,11 +157,12 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
   const prevJumpSignal = useRef<number>(jumpSignal);
   const hazardCooldownRef = useRef<number>(0);
 
-  // Sync Skin & Accessory to ref
+  // Sync Character, Skin & Accessory to ref
   useEffect(() => {
-    bunnyRef.current.skin = bunnySkin;
+    bunnyRef.current.characterType = characterType;
+    bunnyRef.current.skin = characterType === 'squirrel' ? squirrelSkin : bunnySkin;
     bunnyRef.current.accessory = bunnyAccessory;
-  }, [bunnySkin, bunnyAccessory]);
+  }, [characterType, bunnySkin, squirrelSkin, bunnyAccessory]);
 
   // Sync Rescues from props
   useEffect(() => {
@@ -195,6 +211,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
     decorsRef.current = initial.decors;
     collectiblesRef.current = initial.collectibles;
     animalsRef.current = initial.animals;
+    vinesRef.current = initial.vines || [];
 
     // Butterflies
     const bFlies = [];
@@ -535,15 +552,53 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
         }
       }
 
-      // Move bunny with COLLISION DETECTION against:
-      // 1. River water (cannot cross except over bridge)
-      // 2. Fences (cannot pass solid fences, only gates/openings)
-      // 3. Tree trunks, dense hedge bushes & rocks
+      // Check climbing tree proximity & climbing state for squirrel
+      let isNearClimbableTree = false;
+      if (characterType === 'squirrel') {
+        for (const decor of decorsRef.current) {
+          if (
+            (decor.type.startsWith('tree_') || decor.type === 'squirrel_hollow') &&
+            Math.hypot(bunny.x - decor.x, bunny.y - (decor.y + decor.height * 0.36)) < 65
+          ) {
+            isNearClimbableTree = true;
+            break;
+          }
+        }
+
+        // Check if near any vine
+        let onVine = false;
+        for (const vine of vinesRef.current) {
+          const minX = Math.min(vine.startX, vine.endX) - 30;
+          const maxX = Math.max(vine.startX, vine.endX) + 30;
+          const minY = Math.min(vine.startY, vine.endY) - 30;
+          const maxY = Math.max(vine.startY, vine.endY) + vine.sag + 30;
+          if (bunny.x >= minX && bunny.x <= maxX && bunny.y >= minY && bunny.y <= maxY) {
+            onVine = true;
+            break;
+          }
+        }
+
+        // If squirrel is near tree/vine and jumping or moving up, activate climbing!
+        if ((isNearClimbableTree || onVine) && (bunny.isJumping || moveY < 0)) {
+          if (!bunny.isClimbing) {
+            bunny.isClimbing = true;
+            sounds.playHop();
+            onStatsUpdate((prev) => ({
+              ...prev,
+              treesClimbed: (prev.treesClimbed || 0) + 1,
+            }));
+          }
+        } else if (!isNearClimbableTree && !onVine && !bunny.isJumping) {
+          bunny.isClimbing = false;
+        }
+      }
+
+      // Move player with COLLISION DETECTION
       const targetNextX = bunny.x + moveX;
       const targetNextY = bunny.y + moveY;
 
       if (moveX !== 0) {
-        const colX = checkBunnyCollision(targetNextX, bunny.y, decorsRef.current, bunny.isJumping);
+        const colX = checkBunnyCollision(targetNextX, bunny.y, decorsRef.current, bunny.isJumping, (characterType || 'bunny') as CharacterType, bunny.isClimbing);
         if (!colX.blocked) {
           bunny.x = Math.max(60, Math.min(WORLD_WIDTH - 60, targetNextX));
         } else if (colX.hitObstacleName?.includes('suối') && Math.random() < 0.15) {
@@ -563,7 +618,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
       }
 
       if (moveY !== 0) {
-        const colY = checkBunnyCollision(bunny.x, targetNextY, decorsRef.current, bunny.isJumping);
+        const colY = checkBunnyCollision(bunny.x, targetNextY, decorsRef.current, bunny.isJumping, (characterType || 'bunny') as CharacterType, bunny.isClimbing);
         if (!colY.blocked) {
           bunny.y = Math.max(60, Math.min(WORLD_HEIGHT - 60, targetNextY));
         } else if (colY.hitObstacleName?.includes('suối') && Math.random() < 0.15) {
@@ -788,6 +843,26 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
               ...prev,
               clovers: prev.clovers + 1,
             }));
+          } else if (item.type === 'acorn' || item.type === 'golden_acorn') {
+            const isGold = item.type === 'golden_acorn';
+            if (isGold) sounds.playChime();
+            else sounds.playMunch();
+            const gain = (isGold ? 3 : 1) * luckMultiplier;
+            bunny.acornsEaten = (bunny.acornsEaten || 0) + gain;
+            onStatsUpdate((prev) => ({
+              ...prev,
+              acorns: (prev.acorns || 0) + gain,
+              carrots: prev.carrots + (isGold ? 10 : 3) * gain,
+            }));
+          } else if (item.type === 'apple' || item.type === 'fallen_fruit') {
+            sounds.playMunch();
+            const gain = 1 * luckMultiplier;
+            bunny.applesEaten = (bunny.applesEaten || 0) + gain;
+            onStatsUpdate((prev) => ({
+              ...prev,
+              apples: (prev.apples || 0) + gain,
+              carrots: prev.carrots + 4 * gain,
+            }));
           }
 
           // Spawn floating hearts or golden sparkles
@@ -799,18 +874,105 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
               vy: -Math.random() * 2 - 1,
               size: Math.random() * 3 + 2,
               color:
-                item.type === 'golden_carrot'
+                item.type === 'golden_carrot' || item.type === 'golden_acorn'
                   ? '#f59e0b'
                   : item.type === 'clover'
                   ? '#22c55e'
                   : item.type === 'berry'
                   ? '#ec4899'
+                  : item.type === 'apple'
+                  ? '#ef4444'
+                  : item.type === 'acorn'
+                  ? '#b45309'
                   : '#f97316',
               alpha: 1,
               life: 0,
               maxLife: 25,
-              type: item.type === 'golden_carrot' ? 'sparkle' : 'heart',
+              type: item.type === 'golden_carrot' || item.type === 'golden_acorn' ? 'sparkle' : 'heart',
             });
+          }
+        }
+      }
+
+      // Vine Fruits Harvesting & Natural Respawn Cycle
+      for (const vine of (vinesRef.current || [])) {
+        for (const fruit of (vine.fruits || [])) {
+          if (fruit.collected) {
+            fruit.respawnTimer--;
+            if (fruit.respawnTimer <= 0) {
+              fruit.collected = false;
+              const midX = (vine.startX + vine.endX) / 2;
+              const midY = (vine.startY + vine.endY) / 2 + vine.sag;
+              const t = fruit.t;
+              const fx = (1 - t) * (1 - t) * vine.startX + 2 * (1 - t) * t * midX + t * t * vine.endX;
+              const fy = (1 - t) * (1 - t) * vine.startY + 2 * (1 - t) * t * midY + t * t * vine.endY;
+
+              for (let p = 0; p < 4; p++) {
+                particlesRef.current.push({
+                  x: fx + (Math.random() * 8 - 4),
+                  y: fy + (Math.random() * 8 - 4),
+                  vx: (Math.random() - 0.5) * 1.2,
+                  vy: -Math.random() * 1.2,
+                  size: 2.5,
+                  color: '#86efac',
+                  alpha: 0.8,
+                  life: 0,
+                  maxLife: 20,
+                  type: 'sparkle',
+                });
+              }
+            }
+          } else {
+            const midX = (vine.startX + vine.endX) / 2;
+            const midY = (vine.startY + vine.endY) / 2 + vine.sag;
+            const t = fruit.t;
+            const fx = (1 - t) * (1 - t) * vine.startX + 2 * (1 - t) * t * midX + t * t * vine.endX;
+            const fy = (1 - t) * (1 - t) * vine.startY + 2 * (1 - t) * t * midY + t * t * vine.endY;
+
+            const dist = Math.hypot(bunny.x - fx, bunny.y - fy);
+            if (dist < 32) {
+              fruit.collected = true;
+              fruit.respawnTimer = 1200 + Math.floor(Math.random() * 800); // 20-33s natural respawn
+              sounds.playMunch();
+
+              if (fruit.type === 'acorn') {
+                bunny.acornsEaten = (bunny.acornsEaten || 0) + 1;
+                onStatsUpdate((prev) => ({
+                  ...prev,
+                  acorns: (prev.acorns || 0) + 1,
+                  carrots: prev.carrots + 3,
+                }));
+              } else if (fruit.type === 'apple') {
+                bunny.applesEaten = (bunny.applesEaten || 0) + 1;
+                onStatsUpdate((prev) => ({
+                  ...prev,
+                  apples: (prev.apples || 0) + 1,
+                  carrots: prev.carrots + 4,
+                }));
+              } else if (fruit.type === 'berry') {
+                bunny.berriesPicked += 1;
+                onStatsUpdate((prev) => ({
+                  ...prev,
+                  berries: prev.berries + 1,
+                  carrots: prev.carrots + 2,
+                }));
+              }
+
+              for (let p = 0; p < 7; p++) {
+                particlesRef.current.push({
+                  x: fx,
+                  y: fy,
+                  vx: (Math.random() - 0.5) * 2,
+                  vy: -Math.random() * 1.8 - 0.5,
+                  size: 2.8,
+                  color: fruit.type === 'apple' ? '#f87171' : fruit.type === 'acorn' ? '#fbbf24' : '#f472b6',
+                  alpha: 1,
+                  life: 0,
+                  maxLife: 22,
+                  type: 'sparkle',
+                });
+              }
+            }
           }
         }
       }
@@ -1139,6 +1301,9 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
 
       // 6. Collectibles (Carrots, berries, clovers, regrowing sprouts)
       drawCollectibles(ctx);
+
+      // 6.5 Tree & Canopy Vines (Climbing Vines with dangling fruits)
+      drawVines(ctx, currentTime);
 
       // 7. Background Decors (Burrows, flowers, ponds)
       drawBackgroundDecors(ctx);
@@ -1750,6 +1915,79 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
         ctx.beginPath();
         ctx.arc(item.x, floatY - 7, 3, 0, Math.PI * 2);
         ctx.fill();
+      } else if (item.type === 'acorn' || item.type === 'golden_acorn') {
+        const isGold = item.type === 'golden_acorn';
+        // Shadow
+        ctx.fillStyle = 'rgba(0,0,0,0.14)';
+        ctx.beginPath();
+        ctx.ellipse(item.x, item.y + 8, 7, 3, 0, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Acorn Nut Body
+        ctx.fillStyle = isGold ? '#f59e0b' : '#b45309';
+        ctx.beginPath();
+        ctx.ellipse(item.x, floatY + 1, 6, 7.5, 0, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Acorn Tip
+        ctx.beginPath();
+        ctx.moveTo(item.x - 3, floatY + 6);
+        ctx.lineTo(item.x, floatY + 10);
+        ctx.lineTo(item.x + 3, floatY + 6);
+        ctx.closePath();
+        ctx.fill();
+
+        // Acorn Cap (Nón quả sồi)
+        ctx.fillStyle = isGold ? '#d97706' : '#78350f';
+        ctx.beginPath();
+        ctx.ellipse(item.x, floatY - 4, 7, 4.5, 0, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Stem
+        ctx.strokeStyle = isGold ? '#b45309' : '#451a03';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(item.x, floatY - 8);
+        ctx.lineTo(item.x + 2, floatY - 12);
+        ctx.stroke();
+
+        // Highlight
+        ctx.fillStyle = isGold ? '#fef08a' : '#fde68a';
+        ctx.beginPath();
+        ctx.arc(item.x - 2, floatY, 1.6, 0, Math.PI * 2);
+        ctx.fill();
+      } else if (item.type === 'apple' || item.type === 'fallen_fruit') {
+        // Shadow
+        ctx.fillStyle = 'rgba(0,0,0,0.15)';
+        ctx.beginPath();
+        ctx.ellipse(item.x, item.y + 9, 8, 3.5, 0, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Apple body
+        ctx.fillStyle = '#dc2626';
+        ctx.beginPath();
+        ctx.arc(item.x - 3.5, floatY, 6, 0, Math.PI * 2);
+        ctx.arc(item.x + 3.5, floatY, 6, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Apple stem & green leaf
+        ctx.strokeStyle = '#451a03';
+        ctx.lineWidth = 1.4;
+        ctx.beginPath();
+        ctx.moveTo(item.x, floatY - 5);
+        ctx.quadraticCurveTo(item.x + 2, floatY - 10, item.x + 3, floatY - 11);
+        ctx.stroke();
+
+        ctx.fillStyle = '#22c55e';
+        ctx.beginPath();
+        ctx.ellipse(item.x + 4, floatY - 8, 3, 1.8, 0.4, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Gloss highlight
+        ctx.fillStyle = '#fca5a5';
+        ctx.beginPath();
+        ctx.arc(item.x - 3, floatY - 2, 1.8, 0, Math.PI * 2);
+        ctx.fill();
       } else if (item.type === 'clover') {
         ctx.fillStyle = '#15803d';
         for (let l = 0; l < 4; l++) {
@@ -2193,8 +2431,491 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
     ctx.restore();
   };
 
+  // Draw forest climbing vines with leaves and dangling fruits
+  const drawVines = (ctx: CanvasRenderingContext2D, time: number) => {
+    ctx.save();
+    for (const vine of vinesRef.current) {
+      const midX = (vine.startX + vine.endX) / 2;
+      const midY = (vine.startY + vine.endY) / 2 + vine.sag;
+
+      // Draw thick twisting woody vine rope
+      ctx.beginPath();
+      ctx.moveTo(vine.startX, vine.startY);
+      ctx.quadraticCurveTo(midX, midY, vine.endX, vine.endY);
+      ctx.lineWidth = 5.5;
+      ctx.strokeStyle = '#451a03'; // deep bark brown
+      ctx.lineCap = 'round';
+      ctx.stroke();
+
+      // Top vine highlight
+      ctx.beginPath();
+      ctx.moveTo(vine.startX, vine.startY - 1);
+      ctx.quadraticCurveTo(midX, midY - 1, vine.endX, vine.endY - 1);
+      ctx.lineWidth = 2.5;
+      ctx.strokeStyle = '#78350f';
+      ctx.stroke();
+
+      // Vine leaves along curve
+      for (const leaf of (vine.leaves || [])) {
+        const t = leaf.t;
+        const lx = (1 - t) * (1 - t) * vine.startX + 2 * (1 - t) * t * midX + t * t * vine.endX;
+        const ly = (1 - t) * (1 - t) * vine.startY + 2 * (1 - t) * t * midY + t * t * vine.endY;
+
+        ctx.save();
+        ctx.translate(lx, ly);
+        ctx.rotate(leaf.angle + Math.sin(time * 0.003 + leaf.t * 10) * 0.1);
+
+        // Leaf stem & body
+        ctx.fillStyle = leaf.size > 5 ? '#15803d' : '#22c55e';
+        ctx.beginPath();
+        ctx.ellipse(0, leaf.side * leaf.size, leaf.size * 0.6, leaf.size * 1.2, leaf.angle, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.restore();
+      }
+
+      // Vine Fruits (Acorns, apples, berries)
+      for (const fruit of (vine.fruits || [])) {
+        if (fruit.collected) continue;
+        const t = fruit.t;
+        const fx = (1 - t) * (1 - t) * vine.startX + 2 * (1 - t) * t * midX + t * t * vine.endX;
+        const fy = (1 - t) * (1 - t) * vine.startY + 2 * (1 - t) * t * midY + t * t * vine.endY;
+        const sway = Math.sin(time * 0.004 + t * 8) * 2;
+
+        ctx.save();
+        ctx.translate(fx, fy);
+
+        // Small dangling stem
+        ctx.strokeStyle = '#451a03';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        ctx.lineTo(sway * 0.5, 6);
+        ctx.stroke();
+
+        if (fruit.type === 'acorn') {
+          // Acorn cap & nut
+          ctx.fillStyle = '#78350f';
+          ctx.beginPath();
+          ctx.arc(sway * 0.5, 7, 4.5, Math.PI, 0);
+          ctx.fill();
+
+          ctx.fillStyle = '#b45309';
+          ctx.beginPath();
+          ctx.ellipse(sway * 0.5, 11, 4, 5.5, 0, 0, Math.PI * 2);
+          ctx.fill();
+
+          // Golden sparkle if golden
+          ctx.fillStyle = '#fef08a';
+          ctx.fillRect(sway * 0.5 - 1.5, 9, 1.5, 2);
+        } else if (fruit.type === 'apple') {
+          // Red juicy apple
+          ctx.fillStyle = '#ef4444';
+          ctx.beginPath();
+          ctx.arc(sway * 0.5, 11, 6, 0, Math.PI * 2);
+          ctx.fill();
+
+          // Apple highlight
+          ctx.fillStyle = '#fca5a5';
+          ctx.beginPath();
+          ctx.arc(sway * 0.5 - 2, 9, 1.8, 0, Math.PI * 2);
+          ctx.fill();
+
+          // Green leaf
+          ctx.fillStyle = '#22c55e';
+          ctx.beginPath();
+          ctx.ellipse(sway * 0.5 + 2, 6, 2, 1, Math.PI / 4, 0, Math.PI * 2);
+          ctx.fill();
+        } else {
+          // Berry cluster
+          ctx.fillStyle = '#ec4899';
+          ctx.beginPath();
+          ctx.arc(sway * 0.5, 10, 4.5, 0, Math.PI * 2);
+          ctx.fill();
+        }
+
+        ctx.restore();
+      }
+    }
+    ctx.restore();
+  };
+
+  // Draw Squirrel with lush bushy tail, ear tufts, climbing animation, and skins
+  const drawSquirrel = (ctx: CanvasRenderingContext2D, bunny: BunnyEntity, currentUpgrades: BunnyUpgrades | undefined, time: number) => {
+    ctx.save();
+    const upg = currentUpgrades || DEFAULT_UPGRADES;
+    const isClimbing = bunny.isClimbing || false;
+    const hopYOffset = isClimbing
+      ? 4
+      : Math.abs(Math.sin(bunny.hopPhase)) * 8 +
+        (bunny.isJumping ? Math.sin(bunny.jumpHeight) * (26 + (upg.superHopLevel || 0) * 8) : 0);
+    const squash = bunny.isMoving ? 1 + Math.sin(bunny.hopPhase * 2) * 0.08 : 1;
+
+    // Ground Shadow
+    if (!isClimbing) {
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.22)';
+      ctx.beginPath();
+      const shadowScale = Math.max(0.4, 1 - hopYOffset / 40);
+      ctx.ellipse(bunny.x, bunny.y + 12, 14 * shadowScale, 6 * shadowScale, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // 1. Level Aura Glow
+    if ((upg.level || 1) >= 2) {
+      const auraPulse = (Math.sin(time * 0.006) + 1) / 2;
+      ctx.strokeStyle = (upg.level || 1) >= 5 ? '#f59e0b' : '#38bdf8';
+      ctx.lineWidth = 2.5;
+      ctx.globalAlpha = 0.4 + auraPulse * 0.3;
+      ctx.beginPath();
+      ctx.arc(bunny.x, bunny.y - hopYOffset, 22 + (upg.level || 1) * 2, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
+
+    // 2. Shield Bubble
+    if ((upg.shieldLevel || 0) >= 1) {
+      const shieldGlow = (Math.sin(time * 0.008) + 1) / 2;
+      ctx.strokeStyle = `rgba(52, 211, 153, ${0.4 + shieldGlow * 0.4})`;
+      ctx.fillStyle = `rgba(52, 211, 153, 0.08)`;
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.arc(bunny.x, bunny.y - hopYOffset - 4, 25, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+    }
+
+    ctx.translate(bunny.x, bunny.y - hopYOffset);
+
+    if (bunny.facing === 'left') {
+      ctx.scale(-1, 1);
+    }
+
+    // Determine colors by skin
+    let furPrimary = '#b45309'; // chestnut
+    let furSecondary = '#78350f';
+    let chestColor = '#ffedd5';
+    let earInnerColor = '#fed7aa';
+    let eyeColor = '#1e293b';
+    let tailAccent = '#d97706';
+
+    if (bunny.skin === 'red_fur') {
+      furPrimary = '#ea580c';
+      furSecondary = '#c2410c';
+      chestColor = '#fef08a';
+      earInnerColor = '#fdba74';
+      tailAccent = '#f97316';
+    } else if (bunny.skin === 'golden_autumn') {
+      furPrimary = '#eab308';
+      furSecondary = '#ca8a04';
+      chestColor = '#fef9c3';
+      earInnerColor = '#fde047';
+      tailAccent = '#fbbf24';
+    } else if (bunny.skin === 'silver_frost') {
+      furPrimary = '#94a3b8';
+      furSecondary = '#64748b';
+      chestColor = '#f8fafc';
+      earInnerColor = '#e2e8f0';
+      tailAccent = '#cbd5e1';
+    } else if (bunny.skin === 'shadow_night') {
+      furPrimary = '#1e293b';
+      furSecondary = '#0f172a';
+      chestColor = '#475569';
+      earInnerColor = '#334155';
+      eyeColor = '#22d3ee';
+      tailAccent = '#334155';
+    } else if (bunny.skin === 'galaxy_star') {
+      furPrimary = '#7e22ce';
+      furSecondary = '#581c87';
+      chestColor = '#f3e8ff';
+      earInnerColor = '#d8b4fe';
+      eyeColor = '#f472b6';
+      tailAccent = '#a855f7';
+    }
+
+    // Tail sway / wave
+    const tailSway = isClimbing
+      ? Math.sin(time * 0.008) * 0.15
+      : Math.sin(time * 0.005 + bunny.hopPhase) * 0.2;
+
+    // --- Fluffy Bushy Squirrel Tail ---
+    ctx.save();
+    ctx.translate(-8, 2);
+    ctx.rotate(-0.35 + tailSway);
+
+    // Tail Base & Arc
+    ctx.fillStyle = furSecondary;
+    ctx.beginPath();
+    ctx.moveTo(-4, 0);
+    ctx.bezierCurveTo(-22, -8, -26, -26, -12, -34);
+    ctx.bezierCurveTo(2, -38, 12, -26, 4, -14);
+    ctx.bezierCurveTo(0, -6, 2, 0, -4, 0);
+    ctx.closePath();
+    ctx.fill();
+
+    // Main Fluffy Layer
+    ctx.fillStyle = furPrimary;
+    ctx.beginPath();
+    ctx.moveTo(-3, 0);
+    ctx.bezierCurveTo(-19, -7, -22, -23, -10, -31);
+    ctx.bezierCurveTo(1, -34, 9, -23, 2, -12);
+    ctx.bezierCurveTo(-1, -5, 1, 0, -3, 0);
+    ctx.closePath();
+    ctx.fill();
+
+    // Tail Fluff Highlights
+    ctx.fillStyle = tailAccent;
+    ctx.beginPath();
+    ctx.arc(-8, -24, 7, 0, Math.PI * 2);
+    ctx.arc(-2, -28, 6, 0, Math.PI * 2);
+    ctx.arc(3, -20, 5, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Soft tip
+    ctx.fillStyle = chestColor;
+    ctx.beginPath();
+    ctx.arc(-3, -31, 4, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.restore();
+
+    // --- Body ---
+    ctx.save();
+    if (isClimbing) {
+      ctx.rotate(0.2); // angled upwards climbing pose
+    }
+    ctx.fillStyle = furPrimary;
+    ctx.beginPath();
+    ctx.ellipse(0, 0, 11 * squash, 13 / squash, 0.08, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Creamy Chest / Underbelly Fur
+    ctx.fillStyle = chestColor;
+    ctx.beginPath();
+    ctx.ellipse(3, 1, 6 * squash, 9 / squash, 0.12, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Back Foot
+    ctx.fillStyle = furSecondary;
+    ctx.beginPath();
+    ctx.ellipse(-6, 10, 6, 3.5, 0.1, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Front Foot
+    ctx.fillStyle = furPrimary;
+    ctx.beginPath();
+    ctx.ellipse(4, 10, 6, 3.5, 0.1, 0, Math.PI * 2);
+    ctx.fill();
+
+    // --- Head ---
+    ctx.fillStyle = furPrimary;
+    ctx.beginPath();
+    ctx.arc(6, -8, 9.5, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Cheek Tuft & Cream muzzle
+    ctx.fillStyle = chestColor;
+    ctx.beginPath();
+    ctx.ellipse(10, -5, 4.5, 3.5, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // --- Ears with Fur Tuft Tips ---
+    // Back Ear
+    ctx.save();
+    ctx.translate(1, -14);
+    ctx.rotate(-0.1);
+    ctx.fillStyle = furSecondary;
+    ctx.beginPath();
+    ctx.moveTo(-3, 0);
+    ctx.lineTo(0, -9);
+    ctx.lineTo(3, 0);
+    ctx.closePath();
+    ctx.fill();
+    // Tuft
+    ctx.strokeStyle = furPrimary;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(0, -9);
+    ctx.lineTo(1, -13);
+    ctx.stroke();
+    ctx.restore();
+
+    // Front Ear
+    ctx.save();
+    ctx.translate(6, -14);
+    ctx.rotate(0.15);
+    ctx.fillStyle = furPrimary;
+    ctx.beginPath();
+    ctx.moveTo(-3.5, 0);
+    ctx.lineTo(0, -10);
+    ctx.lineTo(3.5, 0);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = earInnerColor;
+    ctx.beginPath();
+    ctx.moveTo(-1.8, 0);
+    ctx.lineTo(0, -7);
+    ctx.lineTo(1.8, 0);
+    ctx.closePath();
+    ctx.fill();
+    // Tuft
+    ctx.strokeStyle = tailAccent;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(0, -10);
+    ctx.lineTo(1.5, -14);
+    ctx.stroke();
+    ctx.restore();
+
+    // --- Eye ---
+    ctx.fillStyle = eyeColor;
+    ctx.beginPath();
+    ctx.ellipse(9, -8, 2.5, 3, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // White eye shine
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath();
+    ctx.arc(8.2, -9, 1.1, 0, Math.PI * 2);
+    ctx.arc(9.8, -7.5, 0.5, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Nose
+    ctx.fillStyle = '#1e293b';
+    ctx.beginPath();
+    ctx.arc(14, -6, 1.5, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Cute Twitching Whiskers
+    const whiskerTwitch = Math.sin(time * 0.012) * 0.8;
+    ctx.strokeStyle = bunny.skin === 'shadow_night' ? '#94a3b8' : '#e2e8f0';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(12, -5);
+    ctx.lineTo(18, -6 + whiskerTwitch);
+    ctx.moveTo(12, -4);
+    ctx.lineTo(18, -3 - whiskerTwitch);
+    ctx.stroke();
+
+    // --- Paws & Held Acorn ---
+    if (isClimbing) {
+      // Reaching climbing paws gripping tree/bark
+      ctx.fillStyle = furPrimary;
+      ctx.beginPath();
+      ctx.ellipse(12, -2, 3, 4, 0.4, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.ellipse(8, 5, 3, 4, 0.2, 0, Math.PI * 2);
+      ctx.fill();
+    } else {
+      // Paws holding a cute Acorn!
+      ctx.fillStyle = '#78350f'; // acorn cap
+      ctx.beginPath();
+      ctx.arc(8, 0, 3.2, Math.PI, 0);
+      ctx.fill();
+      ctx.fillStyle = '#b45309'; // acorn nut
+      ctx.beginPath();
+      ctx.ellipse(8, 3, 2.8, 3.8, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Paws hugging the acorn
+      ctx.fillStyle = furPrimary;
+      ctx.beginPath();
+      ctx.arc(6, 1, 2.5, 0, Math.PI * 2);
+      ctx.arc(10, 1, 2.5, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    ctx.restore(); // End body/head transform
+
+    // --- Accessories on Squirrel ---
+    if (bunny.accessory === 'flower') {
+      ctx.fillStyle = '#ec4899';
+      for (let p = 0; p < 5; p++) {
+        const pa = (p * Math.PI * 2) / 5;
+        ctx.beginPath();
+        ctx.arc(4 + Math.cos(pa) * 3.5, -16 + Math.sin(pa) * 3.5, 2.2, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.fillStyle = '#fde047';
+      ctx.beginPath();
+      ctx.arc(4, -16, 1.8, 0, Math.PI * 2);
+      ctx.fill();
+    } else if (bunny.accessory === 'straw_hat') {
+      ctx.fillStyle = '#ca8a04';
+      ctx.beginPath();
+      ctx.ellipse(5, -16, 11, 3, 0.1, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#eab308';
+      ctx.beginPath();
+      ctx.arc(5, -19, 5.5, Math.PI, 0);
+      ctx.fill();
+      ctx.fillStyle = '#dc2626';
+      ctx.fillRect(1, -17, 8, 1.8);
+    } else if (bunny.accessory === 'red_ribbon') {
+      ctx.fillStyle = '#ef4444';
+      ctx.beginPath();
+      ctx.moveTo(8, 0);
+      ctx.lineTo(4, -3);
+      ctx.lineTo(4, 3);
+      ctx.closePath();
+      ctx.fill();
+      ctx.beginPath();
+      ctx.moveTo(8, 0);
+      ctx.lineTo(12, -3);
+      ctx.lineTo(12, 3);
+      ctx.closePath();
+      ctx.fill();
+      ctx.fillStyle = '#991b1b';
+      ctx.beginPath();
+      ctx.arc(8, 0, 1.8, 0, Math.PI * 2);
+      ctx.fill();
+    } else if (bunny.accessory === 'carrot_pack') {
+      ctx.fillStyle = '#ea580c';
+      ctx.beginPath();
+      ctx.ellipse(-7, 0, 4.5, 7, -0.2, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#16a34a';
+      ctx.beginPath();
+      ctx.ellipse(-8, -7, 1.8, 3.5, -0.4, 0, Math.PI * 2);
+      ctx.fill();
+    } else if (bunny.accessory === 'glasses') {
+      ctx.strokeStyle = '#f59e0b';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.arc(9, -8, 3.8, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(5, -8);
+      ctx.lineTo(2, -9);
+      ctx.stroke();
+    } else if (bunny.accessory === 'crown') {
+      ctx.fillStyle = '#f59e0b';
+      ctx.beginPath();
+      ctx.moveTo(1, -16);
+      ctx.lineTo(2, -22);
+      ctx.lineTo(5, -18);
+      ctx.lineTo(8, -23);
+      ctx.lineTo(11, -18);
+      ctx.lineTo(14, -22);
+      ctx.lineTo(15, -16);
+      ctx.closePath();
+      ctx.fill();
+      ctx.fillStyle = '#ef4444';
+      ctx.beginPath();
+      ctx.arc(8, -20, 1.5, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    ctx.restore();
+  };
+
   // Draw Bunny with dynamic upgrade auras, shield bubble & accessories
   const drawBunny = (ctx: CanvasRenderingContext2D, bunny: BunnyEntity, currentUpgrades: BunnyUpgrades | undefined, time: number) => {
+    if (bunny.characterType === 'squirrel') {
+      drawSquirrel(ctx, bunny, currentUpgrades, time);
+      return;
+    }
+
     ctx.save();
     const upg = currentUpgrades || DEFAULT_UPGRADES;
     const hopYOffset =

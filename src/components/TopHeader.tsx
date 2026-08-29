@@ -114,13 +114,22 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
                 </span>
               </>
             )}
-            {stats.goldenCarrots > 0 && (
+            {(stats.acorns || 0) > 0 && (
               <>
                 <span className="text-white/20 font-light">|</span>
-                <span className="flex items-center gap-0.5 sm:gap-1 text-yellow-300 font-black animate-pulse" title="Cà rốt Hoàng Kim">
+                <span className="flex items-center gap-0.5 sm:gap-1 text-amber-400 font-extrabold" title="Quả sồi đã thu thập">
+                  <span className="text-xs sm:text-sm">🌰</span>
+                  <span className="bg-amber-700/30 px-1 sm:px-1.5 py-0.5 rounded-md sm:rounded-lg border border-amber-500/30 text-amber-300">{stats.acorns}</span>
+                </span>
+              </>
+            )}
+            {(stats.goldenCarrots > 0 || (stats.goldenAcorns || 0) > 0) && (
+              <>
+                <span className="text-white/20 font-light">|</span>
+                <span className="flex items-center gap-0.5 sm:gap-1 text-yellow-300 font-black animate-pulse" title="Vật phẩm Hoàng Kim">
                   <span className="text-xs sm:text-sm">✨</span>
                   <span className="bg-yellow-500/20 px-1 sm:px-1.5 py-0.5 rounded-md sm:rounded-lg border border-yellow-400/40 text-yellow-200">
-                    {stats.goldenCarrots}
+                    {stats.goldenCarrots + (stats.goldenAcorns || 0)}
                   </span>
                 </span>
               </>

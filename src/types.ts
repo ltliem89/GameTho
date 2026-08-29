@@ -1,6 +1,10 @@
 export type Direction = 'left' | 'right' | 'up' | 'down';
 
+export type CharacterType = 'bunny' | 'squirrel';
+
 export type BunnySkin = 'white' | 'caramel' | 'spotted' | 'pink' | 'shadow' | 'golden' | 'galaxy';
+export type SquirrelSkin = 'chestnut' | 'red_fur' | 'golden_autumn' | 'silver_frost' | 'shadow_night' | 'galaxy_star';
+
 export type BunnyAccessory = 'none' | 'flower' | 'straw_hat' | 'red_ribbon' | 'carrot_pack' | 'glasses' | 'crown' | 'fairy_wings' | 'witch_hat' | 'rainbow_wreath';
 
 export type WeatherType = 'sunny' | 'afternoon' | 'night' | 'rainy' | 'rain';
@@ -32,19 +36,40 @@ export interface BunnyEntity {
   hopPhase: number;
   jumpHeight: number;
   isJumping: boolean;
-  skin: BunnySkin;
+  characterType?: CharacterType;
+  skin: BunnySkin | SquirrelSkin;
   accessory: BunnyAccessory;
   carrotsEaten: number;
   cloversFound: number;
   berriesPicked: number;
+  acornsEaten?: number;
+  applesEaten?: number;
   hurtTimer: number; // for flashing red when touching hazardous plants
   shieldTimer: number; // golden shield active timer
   auraPhase: number;
+  isClimbing?: boolean;
+  climbTreeId?: string;
+  climbProgress?: number; // 0 to 1 along trunk/branch
+  onVineId?: string;
+  vineProgress?: number; // 0 to 1 along vine
+  isGliding?: boolean;
 }
+
+export type CollectibleType =
+  | 'carrot'
+  | 'berry'
+  | 'clover'
+  | 'golden_carrot'
+  | 'flower_sniff'
+  | 'chest_treasure'
+  | 'apple'
+  | 'acorn'
+  | 'fallen_fruit'
+  | 'golden_acorn';
 
 export interface CollectibleItem {
   id: string;
-  type: 'carrot' | 'berry' | 'clover' | 'golden_carrot' | 'flower_sniff' | 'chest_treasure';
+  type: CollectibleType;
   x: number;
   y: number;
   collected: boolean;
@@ -52,6 +77,33 @@ export interface CollectibleItem {
   maxRespawnTimer?: number;
   regrowProgress?: number; // 0 to 1 for visual sprout scaling
   bobPhase: number;
+  isTreeFruit?: boolean;
+  attachedTreeId?: string;
+  isFallenFruit?: boolean;
+}
+
+export interface ForestVine {
+  id: string;
+  fromTreeId: string;
+  toTreeId: string;
+  startX: number;
+  startY: number;
+  endX: number;
+  endY: number;
+  sag: number;
+  leaves?: {
+    t: number;
+    side: number;
+    size: number;
+    angle: number;
+  }[];
+  fruits: {
+    id: string;
+    type: 'acorn' | 'apple' | 'berry';
+    t: number; // 0 to 1 along vine
+    collected: boolean;
+    respawnTimer: number;
+  }[];
 }
 
 export type HazardType = 'poison_mushroom' | 'thorn_bush' | 'wild_chili' | 'toxic_nightshade';
@@ -70,6 +122,15 @@ export interface HazardPlant {
   eatenCooldown: number;
 }
 
+export interface TreeFruit {
+  id: string;
+  type: 'apple' | 'acorn' | 'golden_acorn';
+  relX: number;
+  relY: number;
+  collected: boolean;
+  respawnTimer: number;
+}
+
 export interface ForestDecor {
   id: string;
   type:
@@ -81,6 +142,7 @@ export interface ForestDecor {
     | 'tree_willow'
     | 'tree_birch'
     | 'tree_maple'
+    | 'tree_acorn_oak'
     | 'bush'
     | 'mushroom_red'
     | 'mushroom_glow'
@@ -96,7 +158,8 @@ export interface ForestDecor {
     | 'bench'
     | 'water_pond'
     | 'ancient_ruin'
-    | 'lantern_pole';
+    | 'lantern_pole'
+    | 'squirrel_hollow';
   x: number;
   y: number;
   width: number;
@@ -104,6 +167,7 @@ export interface ForestDecor {
   layer?: 'back' | 'obstacle' | 'front';
   collidable?: boolean;
   interactive?: boolean;
+  fruits?: TreeFruit[];
 }
 
 export interface ForestAnimal {
@@ -184,6 +248,7 @@ export interface Quest {
   rewardTextVi: string;
   rewardCarrots: number;
   rewardSkin?: BunnySkin;
+  rewardSquirrelSkin?: SquirrelSkin;
   rewardAccessory?: BunnyAccessory;
   targetId?: string;
 }
@@ -240,6 +305,10 @@ export interface DiscoveryStats {
   clovers: number;
   goldenCarrots: number;
   apples: number;
+  acorns: number;
+  treesClimbed: number;
+  vinesTraversed: number;
+  characterType: CharacterType;
   witheredPlantsRevived: number;
   rescuesCompleted: string[]; // ids of rescued environmental missions
   ecoScore: number;
@@ -253,6 +322,7 @@ export interface DiscoveryStats {
   hazardsAvoidedOrHit: number;
   questsCompletedCount: number;
   unlockedSkins: BunnySkin[];
+  unlockedSquirrelSkins: SquirrelSkin[];
   unlockedAccessories: BunnyAccessory[];
   upgrades: BunnyUpgrades;
   achievements: Achievement[];

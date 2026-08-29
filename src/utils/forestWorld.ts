@@ -1,4 +1,16 @@
-import { Achievement, CollectibleItem, EnvironmentalRescue, ForestAnimal, ForestDecor, HazardPlant, InteractivePlant, Quest } from '../types';
+import {
+  Achievement,
+  CharacterType,
+  CollectibleItem,
+  EnvironmentalRescue,
+  ForestAnimal,
+  ForestDecor,
+  ForestVine,
+  HazardPlant,
+  InteractivePlant,
+  Quest,
+  TreeFruit,
+} from '../types';
 
 export const WORLD_WIDTH = 4400;
 export const WORLD_HEIGHT = 3200;
@@ -455,6 +467,7 @@ export function generateInitialWorld(): {
   collectibles: CollectibleItem[];
   animals: ForestAnimal[];
   hazards: HazardPlant[];
+  vines?: ForestVine[];
 } {
   const decors: ForestDecor[] = [];
   const collectibles: CollectibleItem[] = [];
@@ -704,7 +717,7 @@ export function generateInitialWorld(): {
     collidable: true,
   });
 
-  // Apple Trees in orchard
+  // Apple Trees in orchard with sweet juicy apples
   const appleTreePositions = [
     { x: 1020, y: 440 },
     { x: 1180, y: 560 },
@@ -721,7 +734,36 @@ export function generateInitialWorld(): {
       height: 150,
       layer: 'obstacle',
       collidable: true,
+      fruits: [
+        { id: `apple_tree_${idx}_f1`, type: 'apple', relX: -32, relY: -35, collected: false, respawnTimer: 0 },
+        { id: `apple_tree_${idx}_f2`, type: 'apple', relX: 28, relY: -42, collected: false, respawnTimer: 0 },
+        { id: `apple_tree_${idx}_f3`, type: 'apple', relX: 0, relY: -58, collected: false, respawnTimer: 0 },
+      ],
     });
+  });
+
+  // Squirrel Hollow Nests (Tổ Sóc trên cây cổ thụ)
+  decors.push({
+    id: 'squirrel_hollow_home',
+    type: 'squirrel_hollow',
+    x: 820,
+    y: 540,
+    width: 60,
+    height: 60,
+    layer: 'front',
+    collidable: false,
+    interactive: true,
+  });
+  decors.push({
+    id: 'squirrel_hollow_bamboo',
+    type: 'squirrel_hollow',
+    x: 3650,
+    y: 650,
+    width: 60,
+    height: 60,
+    layer: 'front',
+    collidable: false,
+    interactive: true,
   });
 
   // Willow Trees along river banks (avoiding the 3 bridge crossing areas)
@@ -938,15 +980,16 @@ export function generateInitialWorld(): {
     }
   }
 
-  for (let i = 0; i < 75; i++) {
+  for (let i = 0; i < 85; i++) {
     const rx = 200 + seedRandom(seed++) * (WORLD_WIDTH - 400);
     const ry = 200 + seedRandom(seed++) * (WORLD_HEIGHT - 400);
     if (isPointInRiver(rx, ry)) continue;
 
     const typeRoll = seedRandom(seed++);
     let colType: CollectibleItem['type'] = 'carrot';
-    if (typeRoll < 0.42) colType = 'berry';
-    else if (typeRoll < 0.72) colType = 'clover';
+    if (typeRoll < 0.35) colType = 'berry';
+    else if (typeRoll < 0.6) colType = 'clover';
+    else if (typeRoll < 0.82) colType = 'acorn';
     else colType = 'carrot';
 
     collectibles.push({
@@ -959,6 +1002,57 @@ export function generateInitialWorld(): {
       bobPhase: Math.random() * Math.PI * 2,
     });
   }
+
+  // Fallen Apples under Orchard Apple Trees
+  const fallenApples = [
+    { x: 1040, y: 510 },
+    { x: 1150, y: 470 },
+    { x: 1210, y: 630 },
+    { x: 930, y: 760 },
+    { x: 1000, y: 730 },
+    { x: 1140, y: 890 },
+    { x: 1200, y: 800 },
+  ];
+  fallenApples.forEach((pos, idx) => {
+    collectibles.push({
+      id: `fallen_apple_${idx}`,
+      type: 'apple',
+      x: pos.x,
+      y: pos.y,
+      collected: false,
+      respawnTimer: 0,
+      bobPhase: Math.random() * Math.PI * 2,
+      isFallenFruit: true,
+    });
+  });
+
+  // Fallen Acorns under Oak & Maple Trees
+  const fallenAcorns = [
+    { x: 620, y: 520 },
+    { x: 740, y: 480 },
+    { x: 880, y: 640 },
+    { x: 1480, y: 1550 },
+    { x: 1650, y: 1620 },
+    { x: 1980, y: 2480 },
+    { x: 2150, y: 2620 },
+    { x: 3480, y: 610 },
+    { x: 3780, y: 790 },
+    { x: 3620, y: 1520 },
+    { x: 3920, y: 1720 },
+    { x: 3720, y: 2510 },
+  ];
+  fallenAcorns.forEach((pos, idx) => {
+    collectibles.push({
+      id: `fallen_acorn_${idx}`,
+      type: 'acorn',
+      x: pos.x,
+      y: pos.y,
+      collected: false,
+      respawnTimer: 0,
+      bobPhase: Math.random() * Math.PI * 2,
+      isFallenFruit: true,
+    });
+  });
 
   // Golden Carrots
   const goldenSpots = [
@@ -978,6 +1072,17 @@ export function generateInitialWorld(): {
       respawnTimer: 0,
       bobPhase: 0,
     });
+  });
+
+  // Golden Acorn in Secret Grove
+  collectibles.push({
+    id: 'golden_acorn_secret',
+    type: 'golden_acorn',
+    x: 2050,
+    y: 2510,
+    collected: false,
+    respawnTimer: 0,
+    bobPhase: 0,
   });
 
   // 13. Forest Animals
@@ -1213,14 +1318,140 @@ export function generateInitialWorld(): {
     dialogueTimer: 0,
   });
 
-  return { decors, collectibles, animals, hazards };
+  // Helper to generate vine leaves
+  const createVineLeaves = (count: number = 6) => {
+    const list = [];
+    for (let i = 0; i < count; i++) {
+      list.push({
+        t: (i + 0.5) / count,
+        side: i % 2 === 0 ? 1 : -1,
+        size: 3.8 + Math.sin(i * 1.8) * 1.2,
+        angle: (i % 2 === 0 ? 0.35 : -0.35) + Math.cos(i) * 0.15,
+      });
+    }
+    return list;
+  };
+
+  // Canopy Vines (Dây Leo Kết Nối Giữa Các Cành Cây)
+  const vines: ForestVine[] = [
+    // Orchard Apple Canopy Vines
+    {
+      id: 'vine_orchard_1',
+      fromTreeId: 'apple_tree_0',
+      toTreeId: 'apple_tree_1',
+      startX: 1020,
+      startY: 380,
+      endX: 1180,
+      endY: 500,
+      sag: 34,
+      leaves: createVineLeaves(6),
+      fruits: [
+        { id: 'vfruit_1', type: 'apple', t: 0.35, collected: false, respawnTimer: 0 },
+        { id: 'vfruit_2', type: 'apple', t: 0.7, collected: false, respawnTimer: 0 },
+      ],
+    },
+    {
+      id: 'vine_orchard_2',
+      fromTreeId: 'apple_tree_2',
+      toTreeId: 'apple_tree_3',
+      startX: 960,
+      startY: 640,
+      endX: 1160,
+      endY: 760,
+      sag: 36,
+      leaves: createVineLeaves(6),
+      fruits: [
+        { id: 'vfruit_3', type: 'apple', t: 0.5, collected: false, respawnTimer: 0 },
+      ],
+    },
+    {
+      id: 'vine_orchard_3',
+      fromTreeId: 'apple_tree_1',
+      toTreeId: 'apple_tree_3',
+      startX: 1180,
+      startY: 500,
+      endX: 1160,
+      endY: 760,
+      sag: 30,
+      leaves: createVineLeaves(5),
+      fruits: [
+        { id: 'vfruit_4', type: 'apple', t: 0.45, collected: false, respawnTimer: 0 },
+      ],
+    },
+    // Meadow Canopy Vines
+    {
+      id: 'vine_meadow_1',
+      fromTreeId: 'oak_home',
+      toTreeId: 'hollow_home',
+      startX: 700,
+      startY: 460,
+      endX: 820,
+      endY: 540,
+      sag: 28,
+      leaves: createVineLeaves(5),
+      fruits: [
+        { id: 'vfruit_5', type: 'acorn', t: 0.4, collected: false, respawnTimer: 0 },
+        { id: 'vfruit_6', type: 'acorn', t: 0.75, collected: false, respawnTimer: 0 },
+      ],
+    },
+    // Mystic Glade Vines
+    {
+      id: 'vine_mystic_1',
+      fromTreeId: 'mystic_tree_1',
+      toTreeId: 'mystic_golden_tree',
+      startX: 1880,
+      startY: 2500,
+      endX: 2050,
+      endY: 2520,
+      sag: 38,
+      leaves: createVineLeaves(7),
+      fruits: [
+        { id: 'vfruit_7', type: 'acorn', t: 0.3, collected: false, respawnTimer: 0 },
+        { id: 'vfruit_8', type: 'berry', t: 0.7, collected: false, respawnTimer: 0 },
+      ],
+    },
+    // Maple & Bamboo Valley Canopy Vines
+    {
+      id: 'vine_maple_1',
+      fromTreeId: 'maple_tree_0',
+      toTreeId: 'maple_tree_1',
+      startX: 3500,
+      startY: 490,
+      endX: 3750,
+      endY: 690,
+      sag: 44,
+      leaves: createVineLeaves(7),
+      fruits: [
+        { id: 'vfruit_9', type: 'acorn', t: 0.35, collected: false, respawnTimer: 0 },
+        { id: 'vfruit_10', type: 'acorn', t: 0.68, collected: false, respawnTimer: 0 },
+      ],
+    },
+    {
+      id: 'vine_maple_2',
+      fromTreeId: 'maple_tree_3',
+      toTreeId: 'maple_tree_4',
+      startX: 3600,
+      startY: 1390,
+      endX: 3950,
+      endY: 1620,
+      sag: 46,
+      leaves: createVineLeaves(7),
+      fruits: [
+        { id: 'vfruit_11', type: 'acorn', t: 0.4, collected: false, respawnTimer: 0 },
+        { id: 'vfruit_12', type: 'acorn', t: 0.72, collected: false, respawnTimer: 0 },
+      ],
+    },
+  ];
+
+  return { decors, collectibles, animals, hazards, vines };
 }
 
 /**
- * Realistic Physics Collision Engine for Bunny
- * - Fences: Solid wall collision boxes that bunny CANNOT pass through (even jumping).
- * - River / Dòng mương: Deep water stream that bunny CANNOT walk or jump into, EXCEPT on Wooden Bridges!
+ * Realistic Physics Collision Engine for Bunny & Squirrel
+ * - Fences: Solid wall collision boxes that player CANNOT pass through (even jumping).
+ * - River / Dòng mương: Deep water stream that player CANNOT walk or jump into, EXCEPT on Wooden Bridges!
  * - Trees: Realistic trunk collision boxes (at bottom center of tree)
+ *   When Squirrel is climbing, it is free to move through canopies and along vines!
  * - Bushes / Rocks / Stumps: Realistic firm obstacles
  * - World boundaries: Strictly bounded
  */
@@ -1228,16 +1459,23 @@ export function checkBunnyCollision(
   newX: number,
   newY: number,
   decors: ForestDecor[],
-  isJumping: boolean = false
-): { blocked: boolean; hitObstacleName?: string } {
+  isJumping: boolean = false,
+  characterType: CharacterType = 'bunny',
+  isClimbing: boolean = false
+): { blocked: boolean; hitObstacleName?: string; climbableTree?: ForestDecor } {
   // 1. World Boundaries (with padding)
   const padding = 28;
   if (newX < padding || newX > WORLD_WIDTH - padding || newY < padding || newY > WORLD_HEIGHT - padding) {
     return { blocked: true, hitObstacleName: 'Biên giới khu rừng' };
   }
 
-  // Bunny collision radius
-  const bunnyRadius = 14;
+  // If squirrel is currently climbing on canopy tree or traversing a vine, bypass ground obstacles
+  if (isClimbing && characterType === 'squirrel') {
+    return { blocked: false };
+  }
+
+  // Player collision radius
+  const playerRadius = characterType === 'squirrel' ? 12 : 14;
 
   // 2. Realistic River Water Obstacle (CANNOT CROSS EXCEPT ON BRIDGES!)
   if (isPointInRiver(newX, newY)) {
@@ -1258,10 +1496,10 @@ export function checkBunnyCollision(
       const fMaxY = d.y + d.height / 2;
 
       if (
-        newX + bunnyRadius > fMinX &&
-        newX - bunnyRadius < fMaxX &&
-        newY + bunnyRadius > fMinY &&
-        newY - bunnyRadius < fMaxY
+        newX + playerRadius > fMinX &&
+        newX - playerRadius < fMaxX &&
+        newY + playerRadius > fMinY &&
+        newY - playerRadius < fMaxY
       ) {
         return { blocked: true, hitObstacleName: 'Hàng rào gỗ' };
       }
@@ -1273,16 +1511,27 @@ export function checkBunnyCollision(
       d.type === 'tree_golden' ||
       d.type === 'tree_willow' ||
       d.type === 'tree_birch' ||
-      d.type === 'tree_maple'
+      d.type === 'tree_maple' ||
+      d.type === 'tree_acorn_oak'
     ) {
-      // Realistic Tree Trunk Collision:
+      // Realistic Tree Trunk Collision & Squirrel Climbing Check:
       const trunkX = d.x;
       const trunkY = d.y + d.height * 0.36;
       const trunkRadius = d.type === 'tree_golden' ? 24 : d.type === 'tree_willow' ? 20 : 18;
 
       const dist = Math.hypot(newX - trunkX, newY - trunkY);
-      if (dist < bunnyRadius + trunkRadius) {
-        return { blocked: true, hitObstacleName: 'Thân cây cổ thụ' };
+
+      // If squirrel is touching or jumping near tree trunk, mark tree as climbable
+      if (characterType === 'squirrel' && dist < trunkRadius + 28) {
+        return {
+          blocked: !isJumping && dist < playerRadius + trunkRadius,
+          hitObstacleName: 'Thân cây cổ thụ',
+          climbableTree: d,
+        };
+      }
+
+      if (dist < playerRadius + trunkRadius) {
+        return { blocked: true, hitObstacleName: 'Thân cây cổ thụ', climbableTree: d };
       }
     } else if (d.type === 'bush') {
       const bushX = d.x;
@@ -1290,8 +1539,8 @@ export function checkBunnyCollision(
       const bushRadiusX = d.width * 0.38;
       const bushRadiusY = d.height * 0.32;
 
-      const dx = (newX - bushX) / (bushRadiusX + bunnyRadius);
-      const dy = (newY - bushY) / (bushRadiusY + bunnyRadius);
+      const dx = (newX - bushX) / (bushRadiusX + playerRadius);
+      const dy = (newY - bushY) / (bushRadiusY + playerRadius);
 
       if (dx * dx + dy * dy < 1.0) {
         if (!isJumping) {
@@ -1301,7 +1550,7 @@ export function checkBunnyCollision(
     } else if (d.type === 'rock' || d.type === 'stump') {
       const propRadius = d.width * 0.36;
       const dist = Math.hypot(newX - d.x, newY - d.y);
-      if (dist < bunnyRadius + propRadius) {
+      if (dist < playerRadius + propRadius) {
         return { blocked: true, hitObstacleName: d.type === 'rock' ? 'Tảng đá cuội' : 'Gốc cây khô' };
       }
     } else if (d.type === 'ancient_ruin') {
@@ -1311,16 +1560,16 @@ export function checkBunnyCollision(
       const ruinMaxY = d.y + d.height / 2;
 
       if (
-        newX + bunnyRadius > ruinMinX &&
-        newX - bunnyRadius < ruinMaxX &&
-        newY + bunnyRadius > ruinMinY &&
-        newY - bunnyRadius < ruinMaxY
+        newX + playerRadius > ruinMinX &&
+        newX - playerRadius < ruinMaxX &&
+        newY + playerRadius > ruinMinY &&
+        newY - playerRadius < ruinMaxY
       ) {
         return { blocked: true, hitObstacleName: 'Cột đá tàn tích' };
       }
     } else if (d.type === 'lantern_pole') {
       const dist = Math.hypot(newX - d.x, newY - (d.y + 20));
-      if (dist < bunnyRadius + 12) {
+      if (dist < playerRadius + 12) {
         return { blocked: true, hitObstacleName: 'Cột đèn lồng' };
       }
     }

@@ -160,6 +160,95 @@ class SoundSystem {
     }
   }
 
+  public playClimb() {
+    if (!this.soundEnabled) return;
+    this.ensureContext();
+    if (!this.ctx) return;
+
+    try {
+      const now = this.ctx.currentTime;
+      // Quick rustling climb scratch
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(320, now);
+      osc.frequency.linearRampToValueAtTime(680, now + 0.06);
+
+      gain.gain.setValueAtTime(0.09, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.08);
+
+      osc.connect(gain);
+      gain.connect(this.ctx.destination);
+
+      osc.start(now);
+      osc.stop(now + 0.08);
+    } catch {
+      // ignore
+    }
+  }
+
+  public playAcornMunch() {
+    if (!this.soundEnabled) return;
+    this.ensureContext();
+    if (!this.ctx) return;
+
+    try {
+      const now = this.ctx.currentTime;
+      // Triple crispy nut crunch
+      for (let i = 0; i < 3; i++) {
+        const offset = i * 0.05;
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(700 + i * 140, now + offset);
+        osc.frequency.exponentialRampToValueAtTime(240, now + offset + 0.045);
+
+        gain.gain.setValueAtTime(0.14, now + offset);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + offset + 0.045);
+
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+
+        osc.start(now + offset);
+        osc.stop(now + offset + 0.045);
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  public playAnimalGreet() {
+    if (!this.soundEnabled) return;
+    this.ensureContext();
+    if (!this.ctx) return;
+
+    try {
+      const notes = [659.25, 880.0, 1046.5]; // E5, A5, C6 sweet friendly trill
+      notes.forEach((freq, idx) => {
+        const now = this.ctx!.currentTime + idx * 0.07;
+        const osc = this.ctx!.createOscillator();
+        const gain = this.ctx!.createGain();
+
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(freq, now);
+        osc.frequency.exponentialRampToValueAtTime(freq * 1.05, now + 0.12);
+
+        gain.gain.setValueAtTime(0.08, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.15);
+
+        osc.connect(gain);
+        gain.connect(this.ctx!.destination);
+
+        osc.start(now);
+        osc.stop(now + 0.15);
+      });
+    } catch {
+      // ignore
+    }
+  }
+
   public playSplash() {
     if (!this.soundEnabled) return;
     this.ensureContext();
